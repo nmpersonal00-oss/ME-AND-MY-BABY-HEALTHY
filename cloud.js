@@ -237,6 +237,14 @@ async function initialSync() {
         return;
       }
     }
+    // Preserve and upload app sections created locally that have never existed in this cloud account.
+    if(remote.length){
+      const cloudKeys=new Set(remote.map(x=>x.document_key));
+      for(const row of localDocs()){
+        if(!cloudKeys.has(row.document_key) && !pending.has(row.document_key))pending.set(row.document_key,row.value);
+      }
+      saveJournal();
+    }
     syncPaused=false;setStatus('Cloud Connected');
     await flushPending();
     if (notify?.checked && typeof Notification!=='undefined' && Notification.permission==='granted') await subscribePush(false);
