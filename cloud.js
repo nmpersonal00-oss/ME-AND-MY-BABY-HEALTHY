@@ -3,6 +3,7 @@
    This module stays dormant until the public config values are supplied. */
 
 import './sounds.js';
+import './timezones.js';
 
 const cfg = window.WH_CLOUD || {};
 const validConfig = /^https:\/\/[^/]+\.supabase\.co\/?$/.test(cfg.url || '') && !!cfg.publishableKey;
