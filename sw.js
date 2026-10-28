@@ -1,28 +1,10 @@
-const CACHE = 'wifey-hubby-v1';
-const FILES = [
-  './', './index.html', './styles.css', './app.js', './config.js',
-  './manifest.webmanifest', './assets/cozy-room.webp',
-  './assets/cozy-room-blank.webp', './assets/icon-192.png',
-  './assets/icon-512.png'
-];
-self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES)).then(() => self.skipWaiting()));
-});
-self.addEventListener('activate', event => {
-  event.waitUntil(Promise.all([
-    caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))),
-    self.clients.claim()
-  ]));
-});
-self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
-  event.respondWith(
-    fetch(event.request).then(response => {
-      if (response.ok) {
-        const copy = response.clone();
-        caches.open(CACHE).then(cache => cache.put(event.request, copy));
-      }
-      return response;
-    }).catch(() => caches.match(event.request))
-  );
+// Notifications while Wifey & Hubby is open; background push is not configured.
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(async clients => {
+    for(const client of clients) if(client.url.startsWith(self.registration.scope)){await client.focus();return}
+    if(self.clients.openWindow) await self.clients.openWindow(self.registration.scope);
+  }));
 });
