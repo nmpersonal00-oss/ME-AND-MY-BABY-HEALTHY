@@ -1,7 +1,7 @@
 {
   "id": "/wifey-hubby/",
-  "name": "Wifey & Hubby",
-  "short_name": "Wifey Hubby",
+  "name": "Daily Sweets",
+  "short_name": "Daily Sweets",
   "description": "Our cozy shared habits, chores, wellness and calendar.",
   "start_url": "./index.html",
   "scope": "./",
