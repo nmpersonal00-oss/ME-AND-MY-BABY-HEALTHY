@@ -755,6 +755,7 @@ button:focus-visible { outline: 3px solid #fff2bb; outline-offset: 3px; }
 @media(max-width:355px){.wt-screen .cal-exercise{grid-template-columns:18px 45px minmax(0,1fr) minmax(112px,43%) 8px;gap:2px;padding:2px 3px}.wt-screen .cal-exercise-picture{width:45px}.wt-screen .cal-exercise-desc strong{font-size:11px}.wt-count b{font-size:13px}.wt-count small{font-size:9px}}
 @media(max-height:720px){.wt-screen .cal-exercise{min-height:74px}.wt-screen .cal-exercise-picture{height:60px}.wt-count{height:54px}}
 
+
 </style>
   <title>Wifey & Hubby</title>
 <script>
@@ -868,7 +869,89 @@ window.COZY_CONFIG = Object.freeze({
 .calv-toast{position:absolute;z-index:55;left:11%;right:11%;bottom:calc(115px + env(safe-area-inset-bottom));padding:12px;border:1px solid #ffe0cd;border-radius:17px;text-align:center;color:#fff2e6;background:rgba(95,38,59,.96);box-shadow:0 0 18px #ff8ca399;font-size:13px;pointer-events:none;}
 .calv-toast[hidden]{display:none!important}
 @media(max-height:740px){.calv-shell{padding-top:95px;gap:7px}.calv-grid-panel{padding:8px 7px}.calv-day{aspect-ratio:1/0.8;border-radius:9px}.calv-selected-panel{margin-top:8px}}
-@media(max-width:350px){.calv-shell{padding-left:3.7%;padding-right:3.7%}.calv-month-label{font-size:26px}.calv-grid-panel{padding-left:6px;padding-right:6px}.calv-day{font-size:13px}.calv-dialog{padding:12px}}
+@media(max-width:350px){.calv-shell{padding-left:3.7%;padding-right:3.7%}.calv-month-label{font-size:26px}.calv-grid-panel{padding-left:6px;padding-right:6px}.calv-day{font-size:13px}.calv-dialog{padding:12px}}/* V22: iPhone Calendar editor stability and accessible narrow-screen layout.
+   Keep the artwork, editor fields, colors, reminders, and event logic unchanged. */
+.calv-modal {
+  box-sizing: border-box;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) 12px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+.calv-dialog {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  width: 100%;
+  max-width: 470px;
+  height: 100%;
+  max-height: 820px;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+.calv-dialog-head {flex: 0 0 auto;}
+.calv-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  align-content: start;
+  padding: 0 3px 14px 0;
+  box-sizing: border-box;
+}
+.calv-form > *, .calv-form .calv-row2 > * {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+.calv-form .calv-row2 {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+.calv-form .calv-row2 > label {width: 100%; min-width: 0;}
+.calv-form input:not([type="checkbox"]),
+.calv-form select, .calv-form textarea {
+  display: block;
+  box-sizing: border-box;
+  min-width: 0 !important;
+  max-width: 100%;
+  width: 100%;
+}
+.calv-form .calv-color-custom input[type="color"] {display:inline-block;}
+.calv-colors {min-width:0;max-width:100%;}
+.calv-dialog > .calv-buttons {
+  flex: 0 0 auto;
+  position: relative;
+  padding: 9px 0 2px;
+  margin-top: 5px;
+  background: transparent;
+}
+.calv-form [hidden] {display:none!important;}
+@media (max-width: 480px) {
+  /* Native Safari date/time controls are wider than they look: prevent collisions. */
+  .calv-form .calv-row2 {grid-template-columns: minmax(0, 1fr); gap: 11px;}
+  .calv-form input:not([type="checkbox"]),
+  .calv-form select, .calv-form textarea {min-height: 43px;}
+}
+
 </style>
 </head>
 <body>
@@ -1004,8 +1087,8 @@ window.COZY_CONFIG = Object.freeze({
           <label>Notes and details<textarea id="calv-notes" maxlength="1600" rows="2" placeholder="Anything important to remember..."> </textarea></label>
           <label class="calv-checkbox"><input id="calv-favorite" type="checkbox"> Special date ♡</label>
           <label class="calv-checkbox" id="calv-done-row" hidden><input id="calv-done" type="checkbox"> Completed on the selected day</label>
-          <div class="calv-buttons"><button type="button" id="calv-delete" class="calv-danger" hidden>Delete</button><button type="button" id="calv-cancel" class="calv-secondary">Cancel</button><button class="calv-primary" type="submit">Save Event ♡</button></div>
-        </form>
+          </form>
+        <div class="calv-buttons"><button type="button" id="calv-delete" class="calv-danger" hidden>Delete</button><button type="button" id="calv-cancel" class="calv-secondary">Cancel</button><button class="calv-primary" type="submit" form="calv-form">Save Event ♡</button></div>
       </section>
     </div>
     <div id="calv-toast" class="calv-toast" role="status" hidden></div>
@@ -2149,11 +2232,11 @@ window.addEventListener('storage',e=>{if(e.key===WT_KEY){wtPlans=wtLoad();if(fit
   $('calv-delete').hidden=!e;
   $('calv-done-row').hidden=!e;
   markColor(e?.color||PALETTE[0]);
-  syncEditor();editor.hidden=false;setTimeout(()=>$('calv-name').focus({preventScroll:true}),30);
+  syncEditor();editor.hidden=false;form.scrollTop=0;
  }
  function syncEditor(){const day=$('calv-all-day').checked; $('calv-time-row').classList.toggle('calv-off',day); $('calv-until-row').classList.toggle('calv-off',$('calv-repeat').value==='none')}
  $('calv-all-day').addEventListener('change',syncEditor);$('calv-repeat').addEventListener('change',syncEditor);
- const close=()=>editor.hidden=true;
+ const close=()=>{if(editor.contains(document.activeElement))document.activeElement.blur();editor.hidden=true;};
  $('calv-close').onclick=close;$('calv-cancel').onclick=close;
  editor.addEventListener('click',e=>{if(e.target===editor)close()});
  form.addEventListener('submit',e=>{
