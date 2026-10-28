@@ -970,6 +970,40 @@ window.COZY_CONFIG = Object.freeze({
   .calv-dialog {max-height:86dvh;}
 }
 
+/* V25 iPhone calendar form: native date/time inputs are used for selecting values, but
+   their platform-specific intrinsic widths cannot distort two-column layout. */
+.calv-dialog{width:calc(100% - 0px);max-width:445px;max-height:min(82dvh,720px);overflow:hidden;}
+.calv-form{flex:1 1 auto;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;scrollbar-gutter:stable;}
+.calv-form .calv-row2{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%;}
+.calv-form label,.calv-form .calv-row2 label{min-width:0;max-width:100%;overflow:visible;}
+.calv-native-picker{
+  position:relative;display:flex;align-items:center;justify-content:center;
+  width:100%;min-width:0;max-width:100%;height:41px;min-height:41px;
+  border:1px solid #ffb3bdad;border-radius:12px;
+  background:#371d2acc;box-sizing:border-box;overflow:hidden;
+}
+.calv-native-picker .calv-picker-display{
+  display:block;width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  text-align:center;white-space:nowrap;padding:0 7px;font-size:clamp(13px,3.65vw,16px);
+  font-weight:400;line-height:40px;color:#fff1ea;pointer-events:none;
+}
+.calv-form .calv-native-picker > .calv-native-input{
+  position:absolute!important;z-index:2;inset:0!important;display:block!important;
+  width:100%!important;max-width:100%!important;height:100%!important;
+  min-width:0!important;min-height:0!important;max-height:100%!important;
+  padding:0!important;margin:0!important;border:0!important;
+  opacity:0!important;cursor:pointer;
+  -webkit-appearance:none;appearance:none;
+}
+.calv-native-picker:focus-within{outline:2px solid #ffccdf;outline-offset:1px;}
+.calv-dialog-head,.calv-dialog>.calv-buttons{flex-shrink:0;}
+.calv-dialog>.calv-buttons{flex-wrap:nowrap;}
+.calv-dialog>.calv-buttons button{white-space:nowrap;}
+@media(max-width:350px){
+ .calv-form .calv-row2{gap:7px;}
+ .calv-native-picker .calv-picker-display{padding:0 3px;font-size:12px;}
+}
+
 </style>
 
 <style id="settings-v24-css">
@@ -1134,17 +1168,17 @@ button.settings-row:active{filter:brightness(1.12)}
         <form id="calv-form" class="calv-form">
           <label>Event name<input id="calv-name" type="text" maxlength="100" placeholder="Anniversary, appointment, date night..." required></label>
           <div class="calv-row2">
-            <label>Date<input id="calv-date" type="date" required></label>
+            <label>Date<span class="calv-native-picker"><span class="calv-picker-display" id="calv-date-text" aria-hidden="true"></span><input class="calv-native-input" id="calv-date" type="date" required aria-label="Event date"></span></label>
             <label>Category<select id="calv-category"><option>Personal</option><option>Appointment</option><option>Birthday</option><option>Anniversary</option><option>Date Night</option><option>Family</option><option>Health</option><option>School</option><option>Work</option><option>Chores</option><option>Reminder</option><option>Other</option></select></label>
           </div>
           <label>Who is this for?<select id="calv-for"><option value="Both">Wifey &amp; Hubby</option><option value="Wifey">Wifey</option><option value="Hubby">Hubby</option></select></label>
           <label class="calv-checkbox"><input id="calv-all-day" type="checkbox"> All-day event</label>
-          <div class="calv-row2" id="calv-time-row"><label>Starts<input id="calv-time" type="time"></label><label>Ends (optional)<input id="calv-end-time" type="time"></label></div>
+          <div class="calv-row2" id="calv-time-row"><label>Starts<span class="calv-native-picker"><span class="calv-picker-display" id="calv-time-text" aria-hidden="true"></span><input class="calv-native-input" id="calv-time" type="time" aria-label="Start time"></span></label><label>Ends (optional)<span class="calv-native-picker"><span class="calv-picker-display" id="calv-end-time-text" aria-hidden="true"></span><input class="calv-native-input" id="calv-end-time" type="time" aria-label="End time"></span></label></div>
           <div class="calv-row2">
             <label>Repeat<select id="calv-repeat"><option value="none">Does not repeat</option><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Every week</option><option value="monthly">Every month</option><option value="yearly">Every year</option></select></label>
             <label>Remind me<select id="calv-remind"><option value="none">No reminder</option><option value="0">At start time</option><option value="5">5 minutes before</option><option value="10">10 minutes before</option><option value="15">15 minutes before</option><option value="30">30 minutes before</option><option value="60">1 hour before</option><option value="120">2 hours before</option><option value="1440">1 day before</option><option value="2880">2 days before</option><option value="10080">1 week before</option></select></label>
           </div>
-          <label id="calv-until-row">Repeat through (optional)<input id="calv-until" type="date"></label>
+          <label id="calv-until-row">Repeat through (optional)<span class="calv-native-picker"><span class="calv-picker-display" id="calv-until-text" aria-hidden="true"></span><input class="calv-native-input" id="calv-until" type="date" aria-label="Repeat through date"></span></label>
           <label>Event color</label>
           <div class="calv-colors" id="calv-colors"><label class="calv-color-custom">Custom <input id="calv-color-custom" type="color" value="#f66b90" aria-label="Choose a custom event color"></label></div>
           <div class="calv-row2"><label>Location (optional)<input id="calv-location" type="text" maxlength="120" placeholder="Place or video call"></label><label>Link (optional)<input id="calv-link" type="url" maxlength="300" placeholder="https://..."></label></div>
@@ -2319,6 +2353,28 @@ window.addEventListener('storage',e=>{if(e.key===WT_KEY){wtPlans=wtLoad();if(fit
  PALETTE.forEach(c=>{const b=eText('button',null,'calv-color');b.type='button';b.dataset.color=c;b.style.backgroundColor=c;b.setAttribute('aria-label','Choose color '+c);b.addEventListener('click',()=>markColor(c));COLORS_CONTAINER.append(b)});
  $('calv-color-custom').addEventListener('input',e=>markColor(e.target.value));
  const editor=$('calv-modal'),form=$('calv-form');
+
+ // Native iPhone date/time inputs retain the actual pickers but never paint beyond
+ // their own half-width cells. These readable values update on every selection.
+ const pickerDisplay=(id)=>{
+  const input=$(id), text=$(id+'-text');if(!input||!text)return;
+  let readable='';
+  if(input.value){
+   if(input.type==='date'){
+    const [year,month,day]=input.value.split('-').map(Number);
+    if(year&&month&&day)readable=new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',year:'numeric'}).format(new Date(year,month-1,day,12));
+   }else if(input.type==='time'){
+    const [h,m]=input.value.split(':').map(Number);
+    if(Number.isFinite(h)&&Number.isFinite(m))readable=(h%12||12)+':'+String(m).padStart(2,'0')+(h>=12?' PM':' AM');
+   }
+  }
+  text.textContent=readable||(id==='calv-end-time'?'Optional':'Choose date');
+ };
+ const updatePickers=()=>['calv-date','calv-time','calv-end-time','calv-until'].forEach(pickerDisplay);
+ ['calv-date','calv-time','calv-end-time','calv-until'].forEach(id=>{
+  const input=$(id);input.addEventListener('input',()=>pickerDisplay(id));
+  input.addEventListener('change',()=>pickerDisplay(id));
+ });
  const categoryValues=['Appointment','Birthday','Anniversary','Date Night','Family','Health','School','Work','Chores','Personal','Reminder','Other'];
  function openEditor(id){
   const e=id?events.find(x=>x.id===id):null;editing=e?e.id:null;form.reset();
@@ -2340,7 +2396,7 @@ window.addEventListener('storage',e=>{if(e.key===WT_KEY){wtPlans=wtLoad();if(fit
   $('calv-delete').hidden=!e;
   $('calv-done-row').hidden=!e;
   markColor(e?.color||PALETTE[0]);
-  syncEditor();editor.hidden=false;form.scrollTop=0;
+  syncEditor();updatePickers();editor.hidden=false;form.scrollTop=0;
  }
  function syncEditor(){const day=$('calv-all-day').checked; $('calv-time-row').classList.toggle('calv-off',day); $('calv-until-row').classList.toggle('calv-off',$('calv-repeat').value==='none')}
  $('calv-all-day').addEventListener('change',syncEditor);$('calv-repeat').addEventListener('change',syncEditor);
