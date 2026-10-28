@@ -3,9 +3,12 @@ Existing calendar entries without a timezone use California time. */
 (() => {
 'use strict';
 const CA='America/Los_Angeles', MB='America/Winnipeg', $=id=>document.getElementById(id);
-const clock=(d,z)=>new Intl.DateTimeFormat('en-US',{timeZone:z,hour:'numeric',minute:'2-digit',hour12:true}).format(d);
+const MANITOBA_CHANGE=Date.parse('2026-11-01T07:00:00Z');
+// Manitoba abolished the 2026 autumn clock change; use UTC-5 after the legal transition even if iOS tzdata is stale.
+const effectiveZone=(instant,z)=>z===MB&&instant.getTime()>=MANITOBA_CHANGE?'Etc/GMT+5':z;
+const clock=(d,z)=>new Intl.DateTimeFormat('en-US',{timeZone:effectiveZone(d,z),hour:'numeric',minute:'2-digit',hour12:true}).format(d);
 function parts(date,zone){
- const p=new Intl.DateTimeFormat('en-US',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date);
+ const p=new Intl.DateTimeFormat('en-US',{timeZone:effectiveZone(date,zone),year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date);
  const v=k=>Number(p.find(x=>x.type===k)?.value);
  return {year:v('year'),month:v('month'),day:v('day'),hour:v('hour'),minute:v('minute')};
 }
@@ -59,7 +62,7 @@ if(habitForm&&habitModal&&habitTime){
  label.append(habitZone);
  habitTime.closest('label')?.parentElement?.after(label);
  const hint=document.createElement('p');hint.style.cssText='font-size:12px;color:#fff0dc;line-height:1.35;margin:0 0 5px';
- hint.textContent='A 9 AM California reminder reaches both phones at 9 AM Wifey / 11 AM Hubby.';
+ hint.textContent='A reminder reaches both phones at the same moment. Manitoba is 2 hours ahead in summer and 3 hours ahead during California winter.';
  label.after(hint);
  const key='wifey-hubby-habits-v4';
  const read=()=>{try{return JSON.parse(localStorage.getItem(key)||'{}')}catch{return {}}};
@@ -104,7 +107,7 @@ function preview(){
  if($('calv-all-day')?.checked){previewText.textContent='All-day event: shown on the selected calendar date.';return}
  const instant=wallToInstant(day,time,select.value);
  if(!instant){previewText.textContent='This local time does not exist on this date because of daylight saving. Choose another time.';return}
- const f=zone=>new Intl.DateTimeFormat('en-US',{timeZone:zone,month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}).format(instant);
+ const f=zone=>new Intl.DateTimeFormat('en-US',{timeZone:effectiveZone(instant,zone),month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}).format(instant);
  previewText.textContent='Same moment on both phones: Wifey '+f(CA)+' · Hubby '+f(MB)+'. Reminders go out together.';
 }
 select.addEventListener('change',preview);
@@ -141,7 +144,7 @@ const agenda=$('calv-agenda');
 if(agenda){
  const deviceZone=Intl.DateTimeFormat().resolvedOptions().timeZone||CA;
  const eventList=()=>{try{const x=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(x)?x:[]}catch{return []}};
- const displayZoneTime=new Intl.DateTimeFormat('en-US',{timeZone:deviceZone,hour:'numeric',minute:'2-digit',hour12:true});
+ const displayZoneTime=instant=>new Intl.DateTimeFormat('en-US',{timeZone:effectiveZone(instant,deviceZone),hour:'numeric',minute:'2-digit',hour12:true}).format(instant);
  let editingAgenda=false;
  function updateAgenda(){
   const list=eventList(),heading=$('calv-selected-heading')?.textContent||'';
@@ -155,11 +158,11 @@ if(agenda){
    if(!match)continue;
    const instant=wallToInstant(selectedDay||match.date,match.time,match.timeZone===MB?MB:CA);
    if(!instant)continue;
-   let localTime=displayZoneTime.format(instant);
-   const localDate=new Intl.DateTimeFormat('en-CA',{timeZone:deviceZone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(instant);
+   let localTime=displayZoneTime(instant);
+   const localDate=new Intl.DateTimeFormat('en-CA',{timeZone:effectiveZone(instant,deviceZone),year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(instant);
    const get=k=>localDate.find(v=>v.type===k)?.value;
    const localDay=get('year')+'-'+get('month')+'-'+get('day');
-   if(selectedDay&&localDay!==selectedDay)localTime=new Intl.DateTimeFormat('en-US',{timeZone:deviceZone,month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}).format(instant);
+   if(selectedDay&&localDay!==selectedDay)localTime=new Intl.DateTimeFormat('en-US',{timeZone:effectiveZone(instant,deviceZone),month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}).format(instant);
    if(timeLabel.textContent!==localTime)timeLabel.textContent=localTime;
    timeLabel.title='Wifey '+clock(instant,CA)+' · Hubby '+clock(instant,MB);
   }
