@@ -135,5 +135,47 @@ form.addEventListener('submit',()=>{
   window.dispatchEvent(new StorageEvent('storage',{key:KEY,newValue:updated}));
  });
 });
+
+// Calendar agenda shows the phone's actual local time; the stored event keeps its source timezone.
+const agenda=$('calv-agenda');
+if(agenda){
+ const deviceZone=Intl.DateTimeFormat().resolvedOptions().timeZone||CA;
+ const eventList=()=>{try{const x=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(x)?x:[]}catch{return []}};
+ const displayZoneTime=new Intl.DateTimeFormat('en-US',{timeZone:deviceZone,hour:'numeric',minute:'2-digit',hour12:true});
+ let editingAgenda=false;
+ function updateAgenda(){
+  const list=eventList(),heading=$('calv-selected-heading')?.textContent||'';
+  const shown=new Date(heading),selectedDay=!Number.isNaN(shown.getTime())
+   ?shown.getFullYear()+'-'+String(shown.getMonth()+1).padStart(2,'0')+'-'+String(shown.getDate()).padStart(2,'0'):null;
+  for(const card of agenda.querySelectorAll('.calv-event')){
+   const title=card.querySelector('.calv-event-title')?.textContent?.replace(/^✓\s*/,'').replace(/\s*♡\s*$/,'').trim();
+   const timeLabel=card.querySelector('.calv-event-time');
+   if(!title||!timeLabel)continue;
+   const match=list.find(e=>e.title===title&&!e.allDay&&e.time);
+   if(!match)continue;
+   const instant=wallToInstant(selectedDay||match.date,match.time,match.timeZone===MB?MB:CA);
+   if(!instant)continue;
+   let localTime=displayZoneTime.format(instant);
+   const localDate=new Intl.DateTimeFormat('en-CA',{timeZone:deviceZone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(instant);
+   const get=k=>localDate.find(v=>v.type===k)?.value;
+   const localDay=get('year')+'-'+get('month')+'-'+get('day');
+   if(selectedDay&&localDay!==selectedDay)localTime=new Intl.DateTimeFormat('en-US',{timeZone:deviceZone,month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}).format(instant);
+   if(timeLabel.textContent!==localTime)timeLabel.textContent=localTime;
+   timeLabel.title='Wifey '+clock(instant,CA)+' · Hubby '+clock(instant,MB);
+  }
+ }
+ new MutationObserver(()=>{if(editingAgenda)return;editingAgenda=true;try{updateAgenda()}finally{editingAgenda=false}}).observe(agenda,{childList:true,subtree:true,characterData:true});
+ updateAgenda();
+}
+// Once genuine Web Push is subscribed, do not also create legacy in-page notifications
+// from device-local timers. Supabase handles the correctly zoned reminder on both phones.
+if(window.CozyAppSettings?.notificationsEnabled){
+ const oldSettings=window.CozyAppSettings;
+ window.CozyAppSettings=Object.freeze({
+  ...oldSettings,
+  notificationsEnabled:()=>!window.WifeyHubbyCloud?.subscribed&&oldSettings.notificationsEnabled()
+ });
+}
+
 window.DailySweetsTimeZones=Object.freeze({california:CA,manitoba:MB,wallToInstant});
 })();
