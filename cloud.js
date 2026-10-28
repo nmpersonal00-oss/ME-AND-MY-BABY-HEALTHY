@@ -19,7 +19,6 @@ const pending = new Map();
 const remoteBaseline = new Map();
 const journalKey = 'daily-sweets-unsent-v1';
 const blockedSync = new Set();
-const remoteBaseline = new Map();
 const originalSet = Storage.prototype.setItem;
 const originalRemove = Storage.prototype.removeItem;
 const originalClear = Storage.prototype.clear;
