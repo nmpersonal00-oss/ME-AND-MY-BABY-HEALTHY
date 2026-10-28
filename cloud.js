@@ -16,9 +16,27 @@ const sign = $('set-signin');
 let client, currentUser, syncInProgress = false, syncPaused = false;
 let deviceReady = false, syncTimer = null, lastPull = 0;
 const pending = new Map();
+const remoteBaseline = new Map();
+const journalKey = 'daily-sweets-unsent-v1';
 const originalSet = Storage.prototype.setItem;
 const originalRemove = Storage.prototype.removeItem;
 const originalClear = Storage.prototype.clear;
+function saveJournal(){
+  if(!currentUser)return;
+  try {
+    if(pending.size)originalSet.call(localStorage,journalKey,JSON.stringify({owner:currentUser.id,items:[...pending]}));
+    else originalRemove.call(localStorage,journalKey);
+  }catch(e){console.warn('Offline changes cannot be journaled',e)}
+}
+function restoreJournal(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(journalKey)||'null');
+    if(saved?.owner!==currentUser?.id||!Array.isArray(saved.items))return;
+    for(const item of saved.items)if(Array.isArray(item)&&managed(item[0])&&
+      localStorage.getItem(item[0])===item[1])pending.set(item[0],item[1]);
+  }catch(e){console.warn('Failed to restore unsent edits',e)}
+}
+
 // Email confirmation must return to this app, not Supabase's localhost default.
 const authRedirectUrl = () => new URL('./index.html', window.location.href).href;
 
@@ -61,20 +79,20 @@ function scheduleSync() {
 Storage.prototype.setItem = function(key, value) {
   originalSet.call(this, key, value);
   if (this === localStorage && managed(String(key)) && currentUser && !syncPaused) {
-    pending.set(String(key), String(value)); scheduleSync();
+    pending.set(String(key), String(value)); saveJournal(); scheduleSync();
   }
 };
 Storage.prototype.removeItem = function(key) {
   originalRemove.call(this, key);
   if (this === localStorage && managed(String(key)) && currentUser && !syncPaused) {
     // Deletes are distinct from an empty stored value.
-    pending.set(String(key), null); scheduleSync();
+    pending.set(String(key), null); saveJournal(); scheduleSync();
   }
 };
 Storage.prototype.clear = function() {
   const keys = this === localStorage ? localDocs().map(x => x.document_key) : [];
   originalClear.call(this);
-  if (currentUser && !syncPaused) { keys.forEach(k => pending.set(k, null)); scheduleSync(); }
+  if (currentUser && !syncPaused) { keys.forEach(k => pending.set(k, null)); saveJournal(); scheduleSync(); }
 };
 async function flushPending() {
   if (!currentUser || syncInProgress || syncPaused || !navigator.onLine || !pending.size) return;
@@ -93,6 +111,7 @@ async function flushPending() {
         if (error) throw error;
       }
       if (pending.get(key) === value) pending.delete(key);
+      saveJournal();
     }
     setStatus('Cloud Connected');
   } catch (e) {
@@ -175,6 +194,7 @@ async function initialSync() {
     const {data,error}=await client.from('wh_documents').select('document_key,value').eq('user_id',currentUser.id);
     if(error)throw error;
     const remote=(data || []).filter(x=>managed(x.document_key));
+    restoreJournal();
     if(!remote.length) {
       // First cloud connection: preserve and upload the existing iPhone's data.
       const items=localDocs();
@@ -183,7 +203,7 @@ async function initialSync() {
         if(err)throw err;
       }
     } else {
-      const changed=remote.filter(x=>localStorage.getItem(x.document_key)!==x.value);
+      const changed=remote.filter(x=>!pending.has(x.document_key)&&localStorage.getItem(x.document_key)!==x.value);
       if(changed.length) {
         const fresh=localDocs().length===0;
         const accept = fresh || confirm('Cloud has saved Wifey & Hubby data. Restore the cloud copy to this phone? Cancel leaves this phone unchanged, without overwriting your cloud backup.');
@@ -281,7 +301,7 @@ async function pollCloud(){
     if(error)throw error;
     const updates=(data||[]).filter(x=>managed(x.document_key)&&localStorage.getItem(x.document_key)!==x.value);
     if(!updates.length)return;
-    if(document.hidden){updates.forEach(x=>originalSet.call(localStorage,x.document_key,x.value));return}
+    if(document.hidden){setStatus('Cloud update available');return}
     if(confirm('Your shared Wifey & Hubby account has newer data from another device. Refresh this phone to show it?')){
       updates.forEach(x=>originalSet.call(localStorage,x.document_key,x.value));location.reload();
     }
