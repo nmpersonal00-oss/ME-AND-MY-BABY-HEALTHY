@@ -18,6 +18,7 @@ let deviceReady = false, syncTimer = null, lastPull = 0;
 const pending = new Map();
 const remoteBaseline = new Map();
 const journalKey = 'daily-sweets-unsent-v1';
+const blockedSync = new Set();
 const originalSet = Storage.prototype.setItem;
 const originalRemove = Storage.prototype.removeItem;
 const originalClear = Storage.prototype.clear;
@@ -95,31 +96,48 @@ Storage.prototype.clear = function() {
   if (currentUser && !syncPaused) { keys.forEach(k => pending.set(k, null)); saveJournal(); scheduleSync(); }
 };
 async function flushPending() {
-  if (!currentUser || syncInProgress || syncPaused || !navigator.onLine || !pending.size) return;
-  syncInProgress = true;
-  const entries = Array.from(pending.entries());
-  try {
-    // A failed upload is retained in the queue, including across temporary network outages.
-    for (const [key, value] of entries) {
-      if (value === null) {
-        const { error } = await client.from('wh_documents').delete().eq('user_id',currentUser.id).eq('document_key',key);
-        if (error) throw error;
-      } else {
-        const { error } = await client.from('wh_documents').upsert({
-          user_id:currentUser.id, document_key:key, value
-        }, {onConflict:'user_id,document_key'});
-        if (error) throw error;
-      }
-      if (pending.get(key) === value) pending.delete(key);
-      saveJournal();
+  if(!currentUser||!client||syncInProgress||syncPaused||!navigator.onLine||!pending.size)return;
+  syncInProgress=true;let conflicted=false,failed=false;
+  const owner=currentUser.id;
+  try{
+    for(const [key,value] of [...pending.entries()]){
+      if(currentUser?.id!==owner)break;
+      if(blockedSync.has(key)){conflicted=true;continue}
+      try{
+        const {data:remote,error:readError}=await client.from('wh_documents')
+          .select('value,updated_at').eq('user_id',owner).eq('document_key',key).maybeSingle();
+        if(readError)throw readError;
+        const base=remoteBaseline.get(key);
+        if(remote?.value===value){
+          remoteBaseline.set(key,remote);
+          if(pending.get(key)===value)pending.delete(key);
+          saveJournal();continue;
+        }
+        if((remote&&(!base||remote.value!==base.value||remote.updated_at!==base.updated_at))||(!remote&&base)){
+          conflicted=true;blockedSync.add(key);continue;
+        }
+        let q;
+        if(value===null&&!remote){
+          if(pending.get(key)===value)pending.delete(key);
+          saveJournal();continue;
+        }
+        if(value===null)q=client.from('wh_documents').delete().eq('user_id',owner).eq('document_key',key).eq('updated_at',remote.updated_at).select('document_key');
+        else if(remote)q=client.from('wh_documents').update({value}).eq('user_id',owner).eq('document_key',key).eq('updated_at',remote.updated_at).select('value,updated_at');
+        else q=client.from('wh_documents').insert({user_id:owner,document_key:key,value}).select('value,updated_at');
+        const {data,error}=await q;
+        if(error&&error.code!=='23505')throw error;
+        if(error||!data?.length){conflicted=true;blockedSync.add(key);continue}
+        if(value===null)remoteBaseline.delete(key);
+        else remoteBaseline.set(key,{value,updated_at:data[0].updated_at});
+        if(pending.get(key)===value)pending.delete(key);
+        saveJournal();
+      }catch(e){failed=true;console.warn('Sync retry required:',e)}
     }
-    setStatus('Cloud Connected');
-  } catch (e) {
-    console.warn('Cloud sync retry needed:', e);
-    setStatus('Sync Pending');
-  } finally {
-    syncInProgress = false;
-  }
+    if(conflicted){
+      setStatus('Sync Conflict — Review Needed');
+      if($('settings-popup')?.hidden)dialog('Sync Conflict','Both phones changed the same section. The changes on this phone and in cloud are preserved. Export a backup from Settings before resolving; nothing is overwritten automatically.');
+    }else setStatus(failed||pending.size?'Sync Pending':'Cloud Connected');
+  }finally{syncInProgress=false}
 }
 function createAuthDialog() {
   const overlay=document.createElement('div');overlay.id='wh-auth-overlay';overlay.hidden=true;
@@ -191,16 +209,18 @@ async function initialSync() {
   syncPaused = true;
   setStatus('Connecting…');
   try {
-    const {data,error}=await client.from('wh_documents').select('document_key,value').eq('user_id',currentUser.id);
+    const {data,error}=await client.from('wh_documents').select('document_key,value,updated_at').eq('user_id',currentUser.id);
     if(error)throw error;
     const remote=(data || []).filter(x=>managed(x.document_key));
+    remoteBaseline.clear();for(const x of remote)remoteBaseline.set(x.document_key,{value:x.value,updated_at:x.updated_at});
     restoreJournal();
     if(!remote.length) {
       // First cloud connection: preserve and upload the existing iPhone's data.
       const items=localDocs();
       for (const x of items) {
-        const {error:err}=await client.from('wh_documents').upsert({...x,user_id:currentUser.id},{onConflict:'user_id,document_key'});
+        const {data:created,error:err}=await client.from('wh_documents').insert({...x,user_id:currentUser.id}).select('updated_at');
         if(err)throw err;
+        remoteBaseline.set(x.document_key,{value:x.value,updated_at:created[0].updated_at});
       }
     } else {
       const changed=remote.filter(x=>!pending.has(x.document_key)&&localStorage.getItem(x.document_key)!==x.value);
@@ -285,7 +305,7 @@ if(validConfig){
     const old=currentUser?.id;currentUser=session?.user || null;
     updateSignInButton();
     if(event==='SIGNED_IN'||(event==='INITIAL_SESSION' && currentUser && old!==currentUser.id))setTimeout(()=>void initialSync(),0);
-    if(event==='SIGNED_OUT'){currentUser=null;pending.clear();syncPaused=false;deviceReady=false;setStatus('Not Connected');}
+    if(event==='SIGNED_OUT'){currentUser=null;pending.clear();remoteBaseline.clear();blockedSync.clear();syncPaused=false;deviceReady=false;setStatus('Not Connected');}
   });
   window.addEventListener('online',()=>{void flushPending();void pollCloud()});
   window.addEventListener('pagehide',()=>void flushPending());
@@ -297,10 +317,10 @@ async function pollCloud(){
   if(!client||!currentUser||syncPaused||pending.size||syncInProgress||Date.now()-lastPull<15000)return;
   lastPull=Date.now();
   try{
-    const {data,error}=await client.from('wh_documents').select('document_key,value').eq('user_id',currentUser.id);
+    const {data,error}=await client.from('wh_documents').select('document_key,value,updated_at').eq('user_id',currentUser.id);
     if(error)throw error;
     const updates=(data||[]).filter(x=>managed(x.document_key)&&localStorage.getItem(x.document_key)!==x.value);
-    if(!updates.length)return;
+    if(!updates.length){for(const x of data||[])remoteBaseline.set(x.document_key,{value:x.value,updated_at:x.updated_at});return;}
     if(document.hidden){setStatus('Cloud update available');return}
     if(confirm('Your shared Wifey & Hubby account has newer data from another device. Refresh this phone to show it?')){
       updates.forEach(x=>originalSet.call(localStorage,x.document_key,x.value));location.reload();
