@@ -757,6 +757,8 @@ button:focus-visible { outline: 3px solid #fff2bb; outline-offset: 3px; }
 
 
 </style>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./assets/icon-192.png" />
   <title>Wifey & Hubby</title>
 <script>
 window.COZY_CONFIG = Object.freeze({
@@ -1197,7 +1199,7 @@ button.settings-row:active{filter:brightness(1.12)}
         <div class="settings-scroll">
           <div class="settings-heading">
             <div class="settings-mainicon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M14 34h22a9 9 0 0 0 1.4-17.9 13 13 0 0 0-25.3-1.4A9.8 9.8 0 0 0 14 34Z"/><path d="M24 23v16m-6-7 6-9 6 9"/></svg></div>
-            <div><h2>Cloud Sync <span aria-hidden="true">♡</span></h2><p>Keep your progress safe across all your devices.</p></div>
+            <div><h2>Cloud Sync <span aria-hidden="true">♡</span></h2><p>Back up and sync your progress across devices.</p></div>
           </div>
           <div class="settings-section">
             <button class="settings-row" type="button" id="set-signin">
@@ -2484,18 +2486,9 @@ window.addEventListener('storage',e=>{if(e.key===WT_KEY){wtPlans=wtLoad();if(fit
  function clickNote(){if(!sounds.checked)return;try{const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)return;audio=audio||new AudioCtx();if(audio.state==='suspended')audio.resume();let tone=audio.createOscillator(),gain=audio.createGain();tone.type='sine';tone.frequency.setValueAtTime(710,audio.currentTime);tone.frequency.exponentialRampToValueAtTime(1030,audio.currentTime+.08);gain.gain.setValueAtTime(.014,audio.currentTime);gain.gain.exponentialRampToValueAtTime(.0001,audio.currentTime+.1);tone.connect(gain);gain.connect(audio.destination);tone.start();tone.stop(audio.currentTime+.105)}catch{}}
  sounds.addEventListener('change',()=>{persist();clickNote()});
  document.addEventListener('click',e=>{if(e.target.closest('button, .settings-switch') && !e.target.closest('#set-sounds'))clickNote()},true);
- notifs.addEventListener('change',async()=>{
-   if(notifs.checked){
-     if(!('Notification' in window)){notifs.checked=false;tell('Notifications','This browser does not support notifications. We can set up more reliable reminders during the technical setup.');}
-     else if(Notification.permission==='denied'){notifs.checked=false;tell('Notifications','Notifications have been blocked in your browser settings. Change the site permission to enable them.');}
-     else if(Notification.permission==='default'){
-       try{const answer=await Notification.requestPermission();if(answer!=='granted'){notifs.checked=false;tell('Notifications','Permission was not granted. Your events will still be saved in the app.')}}catch{notifs.checked=false}
-     }
-   }
-   persist();
- });
+ notifs.addEventListener('change',persist);
  // This is deliberately a future connection; a frontend-only HTML file cannot truthfully sign in or sync to a cloud.
- byId('set-signin').addEventListener('click',()=>tell('Cloud Sync','Cloud sign-in is not connected yet. We can connect accounts, secure cloud storage, and syncing between your devices in the technical setup next. For now, Backup Data saves a local copy.'));
+ // Cloud sign-in handled by cloud.js
  const backupKeys=['wifey-hubby-habits-v4','wifey-hubby-chores-v1','wifey-hubby-nutrition-v1','wifey-hubby-fitness-custom-goals-v1','wifey-hubby-calisthenics-plans-v1','wifey-hubby-calisthenics-completed-v1','wifey-hubby-weight-plans-v1','wifey-hubby-weight-completed-v1','wifey-hubby-calendar-v1',settingsKey];
  // Include additional saved app keys for forwards/backwards compatibility but no unrelated site data.
  function collect(){const values={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&/^wifey-hubby-[a-z\d-]{1,100}$/.test(k))values[k]=localStorage.getItem(k)}return values}
@@ -2527,5 +2520,7 @@ window.addEventListener('storage',e=>{if(e.key===WT_KEY){wtPlans=wtLoad();if(fit
  window.CozyAppSettings=Object.freeze({notificationsEnabled:()=>!!readSettings().notifications,soundEffectsEnabled:()=>!!readSettings().soundEffects});
 })();
 </script>
+<script src="./cloud-config.js"></script>
+<script type="module" src="./cloud.js"></script>
 </body>
 </html>
