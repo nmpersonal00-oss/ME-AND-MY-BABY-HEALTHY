@@ -22,7 +22,10 @@
   --handwriting: 'Delius', 'Chalkboard SE', 'Comic Sans MS', 'Trebuchet MS', Arial, sans-serif;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; min-height: 100%; }
+/* iPhone Home Screen apps can launch with a viewport smaller than the actual display.
+   Give the document an explicit real viewport height so no body-color strip shows below the app. */
+html, body { margin: 0; height: 100vh; min-height: 100vh; overflow: hidden; overscroll-behavior: none; }
+
 body {
   background: #1e1016;
   color: var(--cream);
@@ -38,6 +41,7 @@ button:focus-visible { outline: 3px solid #fff2bb; outline-offset: 3px; }
   width: min(100%, 480px);
   height: 100vh;
   height: 100dvh;
+  height: var(--cozy-display-height, 100dvh);
   min-height: 0;
   margin: 0 auto;
   overflow: hidden;
@@ -339,7 +343,13 @@ button:focus-visible { outline: 3px solid #fff2bb; outline-offset: 3px; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 
-@supports (height: 100dvh) { .app-shell { height: 100dvh; } }
+/* Do not use the dynamic browser height for an installed iPhone Home Screen app.
+   On some iOS releases it omits the bottom safe area until the first swipe. */
+@supports (height: 100dvh) { .app-shell { height: var(--cozy-display-height, 100dvh); } }
+@media (display-mode: standalone) {
+  .app-shell { height: var(--cozy-display-height, max(100lvh, calc(100dvh + env(safe-area-inset-bottom, 0px)))); }
+}
+
 @media (max-height: 610px) {
   .home-header {top:24px}
   .welcome-text {font-size:clamp(22px,6.2vw,27px)}
@@ -479,6 +489,39 @@ window.COZY_CONFIG = Object.freeze({
   husbandTimeZone: null,
   waterGoalGlasses: 8
 });
+</script>
+<script>
+/* Small iOS-only initial-viewport fix. Does not resize content in normal Safari tabs.
+   The bottom navigation and page artwork remain pinned to the same app-shell. */
+(function () {
+  'use strict';
+  const root = document.documentElement;
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  function syncDisplayHeight() {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    if (!isIOS || !standalone) {
+      root.style.removeProperty('--cozy-display-height');
+      return;
+    }
+    // In iOS installed web apps the physical screen can exceed the initial
+    // dynamic viewport height by the bottom safe area or status-bar offset.
+    const portrait = window.matchMedia('(orientation: portrait)').matches;
+    const screenHeight = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+    const measuredHeight = Math.max(window.innerHeight || 0,
+      document.documentElement.clientHeight || 0,
+      window.visualViewport ? window.visualViewport.height + window.visualViewport.offsetTop : 0);
+    const correctedHeight = Math.max(screenHeight, measuredHeight);
+    if (Number.isFinite(correctedHeight) && correctedHeight > 0) {
+      root.style.setProperty('--cozy-display-height', Math.round(correctedHeight) + 'px');
+    }
+  }
+  syncDisplayHeight();
+  window.addEventListener('pageshow', syncDisplayHeight);
+  window.addEventListener('resize', syncDisplayHeight);
+  window.addEventListener('orientationchange', () => requestAnimationFrame(syncDisplayHeight));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', syncDisplayHeight);
+})();
 </script>
 </head>
 <body>
