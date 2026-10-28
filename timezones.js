@@ -88,8 +88,11 @@ form.addEventListener('submit',()=>{
   const list=getEvents(),matches=list.filter(e=>e.date===day&&e.title===title&&(e.time===time||e.allDay));
   const entry=matches.find(e=>!prior.some(p=>p.id===e.id))||matches.find(e=>prior.some(p=>p.id===e.id))||matches.at(-1);
   if(!entry||entry.timeZone===zone)return;
-  entry.timeZone=zone;localStorage.setItem(KEY,JSON.stringify(list));
-  window.CozyCalendar?.refresh?.();
+  entry.timeZone=zone;
+  const updated=JSON.stringify(list);
+  localStorage.setItem(KEY,updated);
+  // Same-tab localStorage writes do not emit storage events. Refresh the calendar's own in-memory event list.
+  window.dispatchEvent(new StorageEvent('storage',{key:KEY,newValue:updated}));
  });
 });
 window.DailySweetsTimeZones=Object.freeze({california:CA,manitoba:MB,wallToInstant});
