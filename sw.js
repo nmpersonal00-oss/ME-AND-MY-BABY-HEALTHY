@@ -5,7 +5,7 @@ self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data ? event.data.text() : '' }; }
   // Apple requires all received pushes to produce a visible notification.
-  const title = String(data.title || 'Wifey & Hubby');
+  const title = String(data.title || 'Daily Sweets');
   const body = String(data.body || 'A calendar reminder is ready.');
   event.waitUntil(self.registration.showNotification(title, {
     body,
