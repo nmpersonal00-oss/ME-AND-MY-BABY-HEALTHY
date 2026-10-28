@@ -47,6 +47,46 @@ if(habitType){
  function explain(){hint.textContent=habitType.value==='counter'?'Track a number until you reach a goal, like 8 glasses of water.':'Tap one checkmark when the habit is finished, like brushing your teeth.'}
  habitType.addEventListener('change',explain);explain();habitType.closest('.form-two')?.append(hint);
 }
+
+// Habit reminders are also scheduled against one explicit timezone, not each phone's local clock.
+const habitForm=$('habit-form'), habitModal=$('habit-modal-scrim'), habitTime=$('habit-time');
+if(habitForm&&habitModal&&habitTime){
+ const label=document.createElement('label');label.id='daily-habit-zone-label';label.textContent='Reminder time zone';
+ const habitZone=document.createElement('select');habitZone.id='daily-habit-zone';
+ for(const [value,text] of [[CA,'California (Wifey · Pacific Time)'],[MB,'Manitoba (Hubby · Central Time)']]){
+  const opt=document.createElement('option');opt.value=value;opt.textContent=text;habitZone.append(opt);
+ }
+ label.append(habitZone);
+ habitTime.closest('label')?.parentElement?.after(label);
+ const hint=document.createElement('p');hint.style.cssText='font-size:12px;color:#fff0dc;line-height:1.35;margin:0 0 5px';
+ hint.textContent='A 9 AM California reminder reaches both phones at 9 AM Wifey / 11 AM Hubby.';
+ label.after(hint);
+ const key='wifey-hubby-habits-v4';
+ const read=()=>{try{return JSON.parse(localStorage.getItem(key)||'{}')}catch{return {}}};
+ let wasOpen=false,previous=[];
+ new MutationObserver(()=>{
+  if(habitModal.hidden){wasOpen=false;return}
+  if(wasOpen)return;
+  wasOpen=true;
+  previous=read().habits||[];
+  const old=previous.find(h=>h.name===$('habit-name')?.value);
+  habitZone.value=old?.timeZone===MB?MB:CA;
+ }).observe(habitModal,{attributes:true,attributeFilter:['hidden']});
+ habitForm.addEventListener('submit',()=>{
+  const zone=habitZone.value===MB?MB:CA,name=$('habit-name')?.value.trim();
+  queueMicrotask(()=>{
+   const state=read(),habits=state.habits;
+   if(!Array.isArray(habits)||!name)return;
+   const entry=habits.find(h=>h.name===name&&!previous.some(p=>p.id===h.id))||habits.find(h=>h.name===name&&previous.some(p=>p.id===h.id));
+   if(!entry||entry.timeZone===zone)return;
+   entry.timeZone=zone;
+   const serialized=JSON.stringify(state);
+   localStorage.setItem(key,serialized);
+   window.dispatchEvent(new StorageEvent('storage',{key,newValue:serialized}));
+  });
+ });
+}
+
 const form=$('calv-form'),modal=$('calv-modal'),forLabel=$('calv-for')?.closest('label');
 if(!form||!modal||!forLabel)return;
 const label=document.createElement('label');label.textContent='Event time zone';label.id='daily-event-zone-label';
