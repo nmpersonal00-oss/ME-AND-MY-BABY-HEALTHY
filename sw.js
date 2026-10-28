@@ -10,8 +10,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(title, {
     body,
     tag: String(data.tag || 'wifey-hubby-reminder'),
-    icon: './assets/icon-192.png',
-    badge: './assets/icon-192.png',
+    icon: './icon-192.png',
+    badge: './icon-192.png',
     data: { url: './index.html' }
   }));
 });
