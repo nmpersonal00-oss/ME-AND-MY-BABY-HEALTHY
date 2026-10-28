@@ -2,6 +2,8 @@
    The existing visual app and local-first saving remain unchanged.
    This module stays dormant until the public config values are supplied. */
 
+import './sounds.js';
+
 const cfg = window.WH_CLOUD || {};
 const validConfig = /^https:\/\/[^/]+\.supabase\.co\/?$/.test(cfg.url || '') && !!cfg.publishableKey;
 const $ = id => document.getElementById(id);
@@ -24,7 +26,20 @@ function dialog(title, message) {
   $('settings-popup-message').textContent = message;
   $('settings-popup').hidden = false;
 }
-function setStatus(value) { if (status) status.textContent = value; }
+function updateSignInButton() {
+  if (!sign) return;
+  const label=sign.querySelector('.settings-signin');
+  if (!label) return;
+  const text=currentUser ? 'Connected' : 'Sign In';
+  const textNode=[...label.childNodes].find(n=>n.nodeType===Node.TEXT_NODE);
+  if (textNode) textNode.textContent=text+' ';
+  else label.prepend(document.createTextNode(text+' '));
+  sign.setAttribute('aria-label',currentUser?'Cloud account connected. Manage account.':'Sign in to cloud account');
+}
+function setStatus(value) {
+  if (status) status.textContent = value;
+  updateSignInButton();
+}
 function prefs() { try { return JSON.parse(localStorage.getItem(prefKey) || '{}') || {}; } catch { return {}; } }
 function savePrefs(p) { originalSet.call(localStorage, prefKey, JSON.stringify(p)); }
 function publicError(e) { return e && e.message ? e.message : 'Please check your network connection and try again.'; }
@@ -247,6 +262,7 @@ if(validConfig){
     client=createClient(cfg.url.replace(/\/$/,''),cfg.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   client.auth.onAuthStateChange((event,session)=>{
     const old=currentUser?.id;currentUser=session?.user || null;
+    updateSignInButton();
     if(event==='SIGNED_IN'||(event==='INITIAL_SESSION' && currentUser && old!==currentUser.id))setTimeout(()=>void initialSync(),0);
     if(event==='SIGNED_OUT'){currentUser=null;pending.clear();syncPaused=false;deviceReady=false;setStatus('Not Connected');}
   });
