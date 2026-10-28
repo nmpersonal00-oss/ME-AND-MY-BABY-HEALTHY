@@ -16,6 +16,8 @@ const pending = new Map();
 const originalSet = Storage.prototype.setItem;
 const originalRemove = Storage.prototype.removeItem;
 const originalClear = Storage.prototype.clear;
+// Email confirmation must return to this app, not Supabase's localhost default.
+const authRedirectUrl = () => new URL('./index.html', window.location.href).href;
 
 function dialog(title, message) {
   $('settings-popup-heading').textContent = title;
@@ -94,6 +96,7 @@ function createAuthDialog() {
       <label>Password<input type="password" name="password" autocomplete="current-password" minlength="6" required placeholder="Password"></label>
       <div class="wh-auth-actions"><button type="button" id="wh-auth-cancel">Cancel</button><button type="submit" id="wh-auth-login">Sign In</button></div>
       <button class="wh-auth-alt" type="button" id="wh-auth-signup">Create Account</button>
+      <button class="wh-auth-alt" type="button" id="wh-auth-resend">Resend Confirmation Email</button>
       <button class="wh-auth-alt" type="button" id="wh-auth-logout" hidden>Sign Out</button>
       <p id="wh-auth-feedback" role="status"></p>
     </form></div>`;
@@ -117,15 +120,31 @@ function createAuthDialog() {
     feedback('Signing in…');
     const fd=new FormData(form);
     const {error}=await client.auth.signInWithPassword({email:String(fd.get('email')),password:String(fd.get('password'))});
-    if(error){feedback(publicError(error));return}
+    if(error){
+      const message=publicError(error);
+      feedback(/not confirmed/i.test(message) ? 'Please confirm your email first. Tap Resend Confirmation Email if the link did not work.' : message);
+      return;
+    }
     feedback('Signed in successfully.');close();
   };
   $('wh-auth-signup').onclick=async()=>{
     if(!form.reportValidity())return;
     const fd=new FormData(form);
-    const {error,data}=await client.auth.signUp({email:String(fd.get('email')),password:String(fd.get('password'))});
+    const {error,data}=await client.auth.signUp({
+      email:String(fd.get('email')),password:String(fd.get('password')),
+      options:{emailRedirectTo:authRedirectUrl()}
+    });
     if(error){feedback(publicError(error));return}
-    feedback(data.session ? 'Account ready. Cloud is connecting.' : 'Check your email for a confirmation link, then sign in.');
+    feedback(data.session ? 'Account ready. Cloud is connecting.' : 'Check your email for the confirmation link. When confirmed, open your Wifey & Hubby Home Screen app and sign in.');
+  };
+  $('wh-auth-resend').onclick=async()=>{
+    const email=String(new FormData(form).get('email')||'').trim();
+    if(!email || !$('wh-auth-form').elements.email.checkValidity()){
+      feedback('Enter a valid email address, then tap Resend Confirmation Email.');return;
+    }
+    feedback('Sending a fresh confirmation email…');
+    const {error}=await client.auth.resend({type:'signup',email,options:{emailRedirectTo:authRedirectUrl()}});
+    feedback(error ? publicError(error) : 'Confirmation email requested. Check your inbox, including spam.');
   };
   $('wh-auth-logout').onclick=async()=>{await client.auth.signOut();close()};
   return {open:()=>{form.reset();feedback('');$('wh-auth-logout').hidden=!currentUser;overlay.hidden=false;},close};
