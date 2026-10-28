@@ -614,7 +614,19 @@ window.COZY_CONFIG = Object.freeze({
   const $=id=>document.getElementById(id);
   let activeTab='home',editingId=null,toastTimer=null;
   const iconOptions=['🌷','🐰','💗','🪥','🧼','🫧','🌿','🏃','🏋️','💧','📖','☀️','🌙','🧘','🍓','💊'];
-  const todayKey=()=>{const p=new Intl.DateTimeFormat('en-US',{timeZone:localZone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const f=t=>p.find(v=>v.type===t)?.value||'00';return `${f('year')}-${f('month')}-${f('day')}`};
+  // A shared habit day runs from 3:00 AM until 2:59:59 AM in this device's local time zone.
+  // Keep the per-day storage key: previous checkmarks remain stored but the next day starts blank.
+  // Using UTC calendar arithmetic on the local date parts avoids daylight-saving problems.
+  const habitDayFormatter=new Intl.DateTimeFormat('en-US',{
+    timeZone:localZone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'
+  });
+  const todayKey=(now=new Date())=>{
+    const parts=habitDayFormatter.formatToParts(now);
+    const part=type=>Number(parts.find(p=>p.type===type)?.value||0);
+    const date=new Date(Date.UTC(part('year'),part('month')-1,part('day'),12));
+    if(part('hour')<3)date.setUTCDate(date.getUTCDate()-1);
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}-${String(date.getUTCDate()).padStart(2,'0')}`;
+  };
   const dateFromKey=k=>new Date(k+'T12:00:00');
   const daysBetween=(a,b)=>Math.round((Date.parse(b+'T12:00:00Z')-Date.parse(a+'T12:00:00Z'))/86400000);
   const defaults=()=>[
@@ -661,7 +673,7 @@ window.COZY_CONFIG = Object.freeze({
     const now=new Date(),hour=now.getHours();
     $('greeting').textContent=hour<12?'Good Morning':hour<17?'Good Afternoon':'Good Evening';
     $('today-date').textContent=new Intl.DateTimeFormat('en-US',{weekday:'short',month:'short',day:'numeric'}).format(now);
-    $('habit-date').textContent=new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric'}).format(now);
+    $('habit-date').textContent=new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric'}).format(dateFromKey(todayKey(now)));
     const fmt=tz=>new Intl.DateTimeFormat('en-US',{timeZone:tz,hour:'numeric',minute:'2-digit',hour12:true}).format(now);
     const row=$('two-clocks');row.replaceChildren();
     for(const [text,cls] of [[`Wifey ${fmt(wifeZone)}`,''],['✦','clock-star'],[`Hubby ${fmt(husbandZone)}`,'']]){const s=document.createElement('span');s.textContent=text;if(cls)s.className=cls;row.append(s)}
