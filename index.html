@@ -362,10 +362,8 @@ button:focus-visible { outline: 3px solid #fff2bb; outline-offset: 3px; }
   background-size: cover; background-position: center center;
 }
 .habits-tint {position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(31,13,24,.55) 0%,rgba(42,17,28,.06) 25%,transparent 36%,rgba(50,21,31,.18) 70%,rgba(35,14,22,.28) 100%)}
-.habits-heading {position:absolute; z-index:2; top:clamp(38px,6.1dvh,60px);left:6%;right:6%;display:flex;justify-content:space-between;align-items:center;height:54px;}
+.habits-heading {position:absolute; z-index:2; top:clamp(38px,6.1dvh,60px);left:6%;right:6%;display:flex;justify-content:center;align-items:center;height:54px;}
 .habits-heading h1 { margin:0;font-size:clamp(29px,8vw,39px);font-weight:400;line-height:1;color:#ffe7e5;text-shadow:0 0 9px rgba(255,157,178,.85),0 1px 4px #502337;}
-.habits-heading .top-icon {width:39px;height:39px;display:grid;place-items:center;color:#ffe4d8;text-shadow:0 0 10px #ffb6b8;font-size:35px;background:rgba(93,42,57,.35);border:1px solid rgba(255,196,182,.24);border-radius:100%;}
-.habits-heading button.top-icon {cursor:pointer;border-color:rgba(255,197,184,.45)}
 .habits-date {position:absolute;z-index:2;top:clamp(124px,15.6dvh,160px);left:8%;text-shadow:0 2px 6px #4e1b27;display:flex;flex-direction:column;gap:1px;color:#ffe4de;}
 .habits-date strong {font-size:clamp(26px,7.1vw,34px);font-weight:400;}
 .habits-date span {font-size:clamp(17px,4.6vw,22px);}
@@ -489,7 +487,6 @@ window.COZY_CONFIG = Object.freeze({
       <div class="room-art" aria-hidden="true"></div>
       <div class="hero-veil" aria-hidden="true"></div>
       <header class="home-header">
-        <svg class="header-corner left-corner" viewBox="0 0 24 36" aria-hidden="true"><path d="M20 3 5 18l15 15"/></svg>
         <svg class="header-corner right-corner" viewBox="0 0 40 40" aria-hidden="true"><path d="M4 25h10M26 15h10M20 4v8M20 28v8M7 6l5 5M29 29l5 5M30 8l-5 5M7 34l5-5"/></svg>
         <h1 class="welcome-text"><span id="greeting">Good Evening</span><span>Wifey &amp; Hubby</span></h1>
         <div class="date-pill" id="today-date">Tue, Oct 27</div>
@@ -534,8 +531,7 @@ window.COZY_CONFIG = Object.freeze({
       <div class="habits-art" aria-hidden="true"></div>
       <div class="habits-tint" aria-hidden="true"></div>
       <header class="habits-heading">
-        <button type="button" class="top-icon" id="habits-back" aria-label="Back to Home">‹</button>
-        <h1>Habits</h1><span class="top-icon" aria-hidden="true">✧</span>
+        <h1>Habits</h1>
       </header>
       <div class="habits-date"><strong>Today</strong><span id="habit-date">Oct 27</span></div>
       <div class="habits-workspace">
@@ -798,7 +794,6 @@ window.COZY_CONFIG = Object.freeze({
   $('habit-modal-scrim').addEventListener('click',e=>{if(e.target===$('habit-modal-scrim'))closeModal()});
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('habit-modal-scrim').hidden)closeModal()});
   $('add-habit').addEventListener('click',()=>openModal());
-  $('habits-back').addEventListener('click',()=>showTab('home'));
   for(const b of document.querySelectorAll('.tab'))b.addEventListener('click',()=>showTab(b.dataset.tab));
   $('tasks-card').addEventListener('click',()=>showTab('habits'));
   $('water-card').addEventListener('click',()=>showTab('habits'));
