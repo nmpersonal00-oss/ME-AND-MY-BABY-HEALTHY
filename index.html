@@ -22,6 +22,21 @@
   --handwriting: 'Delius', 'Chalkboard SE', 'Comic Sans MS', 'Trebuchet MS', Arial, sans-serif;
 }
 * { box-sizing: border-box; }
+/* iOS Safari: consecutive taps are button presses, not a double-tap zoom gesture.
+   Keep one-finger vertical scrolling and two-finger pinch zoom available. */
+html, body, .app-shell, .page {
+  touch-action: manipulation;
+}
+button, [role="button"], [role="checkbox"] {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* These areas still scroll normally through long task lists and editing forms. */
+.habit-panel, .habit-form {
+  touch-action: pan-y pinch-zoom;
+  -webkit-overflow-scrolling: touch;
+}
 /* iPhone Home Screen apps can launch with a viewport smaller than the actual display.
    Give the document an explicit real viewport height so no body-color strip shows below the app. */
 html, body { margin: 0; height: 100vh; min-height: 100vh; overflow: hidden; overscroll-behavior: none; }
