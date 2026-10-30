@@ -22,6 +22,130 @@ const blockedSync = new Set();
 const originalSet = Storage.prototype.setItem;
 const originalRemove = Storage.prototype.removeItem;
 const originalClear = Storage.prototype.clear;
+
+/* Preserve a last-synced ancestor per phone so independent edits can be merged.
+   This key is local-only: it is never included in cloud documents. */
+const baselineStoreKey = 'daily-sweets-sync-baselines-v1';
+const WH_ABSENT = Symbol('absent');
+const WH_CONFLICT = Symbol('conflict');
+function rememberBaselines() {
+  if (!currentUser) return;
+  try {
+    originalSet.call(localStorage, baselineStoreKey, JSON.stringify({
+      owner: currentUser.id, entries: [...remoteBaseline]
+    }));
+  } catch (e) { console.warn('Could not persist sync ancestors; retry may require review', e); }
+}
+function loadBaselines() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(baselineStoreKey) || 'null');
+    if (saved?.owner !== currentUser?.id || !Array.isArray(saved.entries)) return;
+    for (const row of saved.entries) {
+      if (Array.isArray(row) && managed(row[0]) && typeof row[1]?.value === 'string'
+          && typeof row[1]?.updated_at === 'string') remoteBaseline.set(row[0], row[1]);
+    }
+  } catch (e) { console.warn('Could not read sync ancestors', e); }
+}
+function setBaseline(key, row) {
+  if (row) remoteBaseline.set(key, { value: row.value, updated_at: row.updated_at });
+  else remoteBaseline.delete(key);
+  rememberBaselines();
+}
+function whEqual(a, b) {
+  return a === b || (a !== WH_ABSENT && b !== WH_ABSENT && JSON.stringify(a) === JSON.stringify(b));
+}
+function whObject(x) { return x !== null && typeof x === 'object' && !Array.isArray(x); }
+function whMergeArray(base, local, remote, depth) {
+  // Items must have stable unique IDs. Never guess how to merge positional arrays.
+  const arrays = [local, remote, ...(Array.isArray(base) ? [base] : [])];
+  const idField = ['id', 'uuid', 'key', 'taskId', 'habitId', 'choreId'].find(field =>
+    arrays.every(items => {
+      const ids = items.map(x => whObject(x) && Object.hasOwn(x, field)
+        && (typeof x[field] === 'string' || typeof x[field] === 'number') ? JSON.stringify(x[field]) : null);
+      return ids.every(id => id !== null) && new Set(ids).size === ids.length;
+    }));
+  if (!idField) return WH_CONFLICT;
+  const makeMap = items => new Map(items.map(x => [JSON.stringify(x[idField]), x]));
+  const a = makeMap(local), b = makeMap(remote), ancestor = makeMap(Array.isArray(base) ? base : []);
+  const ids = new Set([...a.keys(), ...b.keys(), ...ancestor.keys()]);
+  const result = [];
+  for (const id of ids) {
+    const item = whMergeValue(ancestor.get(id) ?? WH_ABSENT, a.get(id) ?? WH_ABSENT,
+      b.get(id) ?? WH_ABSENT, depth + 1);
+    if (item === WH_CONFLICT) return WH_CONFLICT;
+    if (item !== WH_ABSENT) result.push(item);
+  }
+  return result;
+}
+function whMergeValue(base, local, remote, depth = 0) {
+  if (depth > 40) return WH_CONFLICT;
+  if (whEqual(local, remote)) return local;
+  if (whEqual(local, base)) return remote;
+  if (whEqual(remote, base)) return local;
+  if (local === WH_ABSENT || remote === WH_ABSENT) return WH_CONFLICT;
+  if (whObject(local) && whObject(remote) && (base === WH_ABSENT || whObject(base))) {
+    const result = {};
+    const keys = new Set([...Object.keys(base === WH_ABSENT ? {} : base),
+      ...Object.keys(local), ...Object.keys(remote)]);
+    for (const key of keys) {
+      const value = whMergeValue(Object.hasOwn(base === WH_ABSENT ? {} : base, key) ? base[key] : WH_ABSENT,
+        Object.hasOwn(local, key) ? local[key] : WH_ABSENT,
+        Object.hasOwn(remote, key) ? remote[key] : WH_ABSENT, depth + 1);
+      if (value === WH_CONFLICT) return WH_CONFLICT;
+      if (value !== WH_ABSENT) result[key] = value;
+    }
+    return result;
+  }
+  if (Array.isArray(local) && Array.isArray(remote)
+      && (base === WH_ABSENT || Array.isArray(base)))
+    return whMergeArray(base, local, remote, depth);
+  return WH_CONFLICT;
+}
+function mergeCloudDocument(baseRaw, localRaw, remoteRaw) {
+  if (localRaw === remoteRaw) return { ok: true, value: localRaw };
+  if (baseRaw !== undefined && localRaw === baseRaw) return { ok: true, value: remoteRaw };
+  if (baseRaw !== undefined && remoteRaw === baseRaw) return { ok: true, value: localRaw };
+  const decode = raw => {
+    if (raw == null) return WH_ABSENT;
+    try { return JSON.parse(raw); } catch { return raw; }
+  };
+  const merged = whMergeValue(baseRaw === undefined ? WH_ABSENT : decode(baseRaw),
+    decode(localRaw), decode(remoteRaw));
+  return merged === WH_CONFLICT ? { ok: false }
+    : { ok: true, value: merged === WH_ABSENT ? null : JSON.stringify(merged) };
+}
+const recoveryKey = 'daily-sweets-sync-recovery-v1';
+let recoverySavedThisSession = false;
+function snapshotBeforeCloudReplace() {
+  if (recoverySavedThisSession) return true;
+  try {
+    const old = JSON.parse(localStorage.getItem(recoveryKey) || 'null');
+    const previous = old?.owner === currentUser?.id && Array.isArray(old.backups)
+      ? old.backups : [];
+    originalSet.call(localStorage, recoveryKey, JSON.stringify({
+      owner: currentUser?.id,
+      backups: [{ savedAt: new Date().toISOString(), documents: localDocs() },
+        ...previous].slice(0, 3)
+    }));
+    recoverySavedThisSession = true;
+    return true;
+  } catch (e) {
+    console.warn('Cloud update blocked: local recovery backup could not be stored', e);
+    return false;
+  }
+}
+function applyCloudLocal(key, value) {
+  // Refuse to replace phone content if an independent recovery copy cannot be kept.
+  if (!snapshotBeforeCloudReplace()) return false;
+  if (value === null) originalRemove.call(localStorage, key);
+  else originalSet.call(localStorage, key, value);
+  return true;
+}
+function cloudConflictNotice() {
+  setStatus('Sync Conflict — Review Needed');
+  if ($('settings-popup')?.hidden) dialog('Sync Review Needed',
+    'Both phones changed the same information. Nothing has been replaced. The copies on each phone and in the cloud are preserved. Save a backup before resolving this conflict.');
+}
 function saveJournal(){
   if(!currentUser)return;
   try {
@@ -80,64 +204,85 @@ function scheduleSync() {
 Storage.prototype.setItem = function(key, value) {
   originalSet.call(this, key, value);
   if (this === localStorage && managed(String(key)) && currentUser && !syncPaused) {
-    pending.set(String(key), String(value)); saveJournal(); scheduleSync();
+    blockedSync.delete(String(key)); pending.set(String(key), String(value)); saveJournal(); scheduleSync();
   }
 };
 Storage.prototype.removeItem = function(key) {
   originalRemove.call(this, key);
   if (this === localStorage && managed(String(key)) && currentUser && !syncPaused) {
     // Deletes are distinct from an empty stored value.
-    pending.set(String(key), null); saveJournal(); scheduleSync();
+    blockedSync.delete(String(key)); pending.set(String(key), null); saveJournal(); scheduleSync();
   }
 };
 Storage.prototype.clear = function() {
   const keys = this === localStorage ? localDocs().map(x => x.document_key) : [];
   originalClear.call(this);
-  if (currentUser && !syncPaused) { keys.forEach(k => pending.set(k, null)); saveJournal(); scheduleSync(); }
+  if (currentUser && !syncPaused) { keys.forEach(k => { blockedSync.delete(k); pending.set(k, null); }); saveJournal(); scheduleSync(); }
 };
 async function flushPending() {
-  if(!currentUser||!client||syncInProgress||syncPaused||!navigator.onLine||!pending.size)return;
-  syncInProgress=true;let conflicted=false,failed=false;
-  const owner=currentUser.id;
-  try{
-    for(const [key,value] of [...pending.entries()]){
-      if(currentUser?.id!==owner)break;
-      if(blockedSync.has(key)){conflicted=true;continue}
-      try{
-        const {data:remote,error:readError}=await client.from('wh_documents')
-          .select('value,updated_at').eq('user_id',owner).eq('document_key',key).maybeSingle();
-        if(readError)throw readError;
-        const base=remoteBaseline.get(key);
-        if(remote?.value===value){
-          remoteBaseline.set(key,remote);
-          if(pending.get(key)===value)pending.delete(key);
-          saveJournal();continue;
+  if (!currentUser || !client || syncInProgress || syncPaused || !navigator.onLine || !pending.size) return;
+  syncInProgress = true;
+  const owner = currentUser.id;
+  let failed = false, changedLocal = false;
+  try {
+    for (const [key, queued] of [...pending.entries()]) {
+      if (currentUser?.id !== owner) break;
+      if (blockedSync.has(key)) continue;
+      try {
+        // A newer local change must never be replaced by an older queued write.
+        if (localStorage.getItem(key) !== queued) {
+          pending.set(key, localStorage.getItem(key)); saveJournal(); continue;
         }
-        if((remote&&(!base||remote.value!==base.value||remote.updated_at!==base.updated_at))||(!remote&&base)){
-          conflicted=true;blockedSync.add(key);continue;
+        const { data: remote, error: readError } = await client.from('wh_documents')
+          .select('value,updated_at').eq('user_id', owner).eq('document_key', key).maybeSingle();
+        if (readError) throw readError;
+        if (currentUser?.id !== owner) break;
+        let value = queued;
+        if (remote?.value === value || (!remote && value === null)) {
+          setBaseline(key, remote || null);
+          if (pending.get(key) === queued) pending.delete(key);
+          saveJournal(); continue;
         }
-        let q;
-        if(value===null&&!remote){
-          if(pending.get(key)===value)pending.delete(key);
-          saveJournal();continue;
+        const base = remoteBaseline.get(key);
+        if ((remote?.value ?? null) !== (base?.value ?? null) || (!!remote !== !!base)) {
+          const merged = mergeCloudDocument(base?.value, value, remote?.value ?? null);
+          if (!merged.ok) { blockedSync.add(key); continue; }
+          if (localStorage.getItem(key) !== queued) continue;
+          value = merged.value;
+          if (value !== queued) { if (!applyCloudLocal(key, value)) { blockedSync.add(key); continue; } changedLocal = true; }
+          pending.set(key, value);
+          setBaseline(key, remote || null);
+          if ((remote?.value ?? null) === value) {
+            pending.delete(key); saveJournal(); continue;
+          }
         }
-        if(value===null)q=client.from('wh_documents').delete().eq('user_id',owner).eq('document_key',key).eq('updated_at',remote.updated_at).select('document_key');
-        else if(remote)q=client.from('wh_documents').update({value}).eq('user_id',owner).eq('document_key',key).eq('updated_at',remote.updated_at).select('value,updated_at');
-        else q=client.from('wh_documents').insert({user_id:owner,document_key:key,value}).select('value,updated_at');
-        const {data,error}=await q;
-        if(error&&error.code!=='23505')throw error;
-        if(error||!data?.length){conflicted=true;blockedSync.add(key);continue}
-        if(value===null)remoteBaseline.delete(key);
-        else remoteBaseline.set(key,{value,updated_at:data[0].updated_at});
-        if(pending.get(key)===value)pending.delete(key);
+        let query;
+        if (remote && value === null) {
+          query = client.from('wh_documents').delete().eq('user_id', owner)
+            .eq('document_key', key).eq('updated_at', remote.updated_at).select('document_key');
+        } else if (remote) {
+          query = client.from('wh_documents').update({ value }).eq('user_id', owner)
+            .eq('document_key', key).eq('updated_at', remote.updated_at).select('value,updated_at');
+        } else {
+          query = client.from('wh_documents')
+            .insert({ user_id: owner, document_key: key, value }).select('value,updated_at');
+        }
+        const { data, error } = await query;
+        // A competing write is retried and merged at the next attempt.
+        if (error && error.code !== '23505') throw error;
+        if (error || !data?.length) { failed = true; continue; }
+        setBaseline(key, value === null ? null : { value, updated_at: data[0].updated_at });
+        if (pending.get(key) === value) pending.delete(key);
         saveJournal();
-      }catch(e){failed=true;console.warn('Sync retry required:',e)}
+      } catch (e) { failed = true; console.warn('Sync retry required:', e); }
     }
-    if(conflicted){
-      setStatus('Sync Conflict — Review Needed');
-      if($('settings-popup')?.hidden)dialog('Sync Conflict','Both phones changed the same section. The changes on this phone and in cloud are preserved. Export a backup from Settings before resolving; nothing is overwritten automatically.');
-    }else setStatus(failed||pending.size?'Sync Pending':'Cloud Connected');
-  }finally{syncInProgress=false}
+    if (blockedSync.size) cloudConflictNotice();
+    else setStatus(failed || pending.size ? 'Sync Pending' : 'Cloud Connected');
+  } finally {
+    syncInProgress = false;
+    if (pending.size && !blockedSync.size) scheduleSync();
+    if (changedLocal && !pending.size && !blockedSync.size) location.reload();
+  }
 }
 function createAuthDialog() {
   const overlay=document.createElement('div');overlay.id='wh-auth-overlay';overlay.hidden=true;
@@ -205,53 +350,55 @@ function createAuthDialog() {
 const authDialog=createAuthDialog();
 
 async function initialSync() {
-  if (!currentUser || syncPaused) return;
+  if (!currentUser || syncPaused || syncInProgress) return;
+  const owner = currentUser.id;
   syncPaused = true;
   setStatus('Connecting…');
+  let changedLocal = false, hasConflict = false;
   try {
-    const {data,error}=await client.from('wh_documents').select('document_key,value,updated_at').eq('user_id',currentUser.id);
-    if(error)throw error;
-    const remote=(data || []).filter(x=>managed(x.document_key));
-    remoteBaseline.clear();for(const x of remote)remoteBaseline.set(x.document_key,{value:x.value,updated_at:x.updated_at});
+    if (!remoteBaseline.size) loadBaselines();
     restoreJournal();
-    if(!remote.length) {
-      // First cloud connection: preserve and upload the existing iPhone's data.
-      const items=localDocs();
-      for (const x of items) {
-        const {data:created,error:err}=await client.from('wh_documents').insert({...x,user_id:currentUser.id}).select('updated_at');
-        if(err)throw err;
-        remoteBaseline.set(x.document_key,{value:x.value,updated_at:created[0].updated_at});
+    const { data, error } = await client.from('wh_documents')
+      .select('document_key,value,updated_at').eq('user_id', owner);
+    if (error) throw error;
+    if (currentUser?.id !== owner) return;
+    const rows = new Map((data || []).filter(x => managed(x.document_key))
+      .map(x => [x.document_key, x]));
+    const keys = new Set([...rows.keys(), ...localDocs().map(x => x.document_key),
+      ...remoteBaseline.keys(), ...pending.keys()]);
+    for (const key of keys) {
+      const row = rows.get(key) || null;
+      const local = localStorage.getItem(key);
+      const remote = row?.value ?? null;
+      const baseline = remoteBaseline.get(key);
+      if (local === remote) {
+        setBaseline(key, row); pending.delete(key); blockedSync.delete(key);
+        continue;
       }
-    } else {
-      const changed=remote.filter(x=>!pending.has(x.document_key)&&localStorage.getItem(x.document_key)!==x.value);
-      if(changed.length) {
-        const fresh=localDocs().length===0;
-        const accept = fresh || confirm('Cloud has saved Wifey & Hubby data. Restore the cloud copy to this phone? Cancel leaves this phone unchanged, without overwriting your cloud backup.');
-        if(accept) {
-          changed.forEach(x=>originalSet.call(localStorage,x.document_key,x.value));
-          setStatus('Cloud Connected');
-          location.reload();return;
-        }
-        syncPaused=true;setStatus('Cloud Review Needed');
-        dialog('Cloud Data Kept Safe','Your cloud data was not overwritten. To continue syncing, sign out and choose Restore when prompted, or create a backup of this phone first.');
-        return;
+      const result = mergeCloudDocument(baseline?.value, local, remote);
+      if (!result.ok) {
+        blockedSync.add(key); hasConflict = true; continue;
       }
+      blockedSync.delete(key);
+      // Record the actual cloud ancestor BEFORE uploading a merged result.
+      setBaseline(key, row);
+      if (result.value !== local) {
+        if (!applyCloudLocal(key, result.value)) { blockedSync.add(key); hasConflict = true; continue; } changedLocal = true;
+      }
+      if (result.value !== remote) pending.set(key, result.value);
+      else pending.delete(key);
     }
-    // Preserve and upload app sections created locally that have never existed in this cloud account.
-    if(remote.length){
-      const cloudKeys=new Set(remote.map(x=>x.document_key));
-      for(const row of localDocs()){
-        if(!cloudKeys.has(row.document_key) && !pending.has(row.document_key))pending.set(row.document_key,row.value);
-      }
-      saveJournal();
-    }
-    syncPaused=false;setStatus('Cloud Connected');
-    await flushPending();
-    if (notify?.checked && typeof Notification!=='undefined' && Notification.permission==='granted') await subscribePush(false);
-  } catch(e) {
-    syncPaused=false;setStatus('Sync Pending');
-    console.warn('Initial cloud sync could not complete:',e);
-  }
+    saveJournal();
+  } catch (e) {
+    setStatus('Sync Pending');
+    console.warn('Initial cloud sync could not complete:', e);
+    return;
+  } finally { syncPaused = false; }
+  await flushPending();
+  if (hasConflict || blockedSync.size) cloudConflictNotice();
+  if (changedLocal && !pending.size && !blockedSync.size) location.reload();
+  if (notify?.checked && typeof Notification !== 'undefined'
+      && Notification.permission === 'granted') await subscribePush(false);
 }
 const vapidBytes=key=>{
   const padding='='.repeat((4-key.length%4)%4);
@@ -312,7 +459,7 @@ if(validConfig){
   client.auth.onAuthStateChange((event,session)=>{
     const old=currentUser?.id;currentUser=session?.user || null;
     updateSignInButton();
-    if(event==='SIGNED_IN'||(event==='INITIAL_SESSION' && currentUser && old!==currentUser.id))setTimeout(()=>void initialSync(),0);
+    if(currentUser && old!==currentUser.id && (event==='SIGNED_IN'||event==='INITIAL_SESSION'))setTimeout(()=>void initialSync(),0);
     if(event==='SIGNED_OUT'){currentUser=null;pending.clear();remoteBaseline.clear();blockedSync.clear();syncPaused=false;deviceReady=false;setStatus('Not Connected');}
   });
   window.addEventListener('online',()=>{void flushPending();void pollCloud()});
@@ -321,19 +468,26 @@ if(validConfig){
   setInterval(()=>{void flushPending();if(!document.hidden)void pollCloud()},30000);
   })();
 }else{setStatus('Not Connected')}
-async function pollCloud(){
-  if(!client||!currentUser||syncPaused||pending.size||syncInProgress||Date.now()-lastPull<15000)return;
-  lastPull=Date.now();
-  try{
-    const {data,error}=await client.from('wh_documents').select('document_key,value,updated_at').eq('user_id',currentUser.id);
-    if(error)throw error;
-    const updates=(data||[]).filter(x=>managed(x.document_key)&&localStorage.getItem(x.document_key)!==x.value);
-    if(!updates.length){for(const x of data||[])remoteBaseline.set(x.document_key,{value:x.value,updated_at:x.updated_at});return;}
-    if(document.hidden){setStatus('Cloud update available');return}
-    if(confirm('Your shared Wifey & Hubby account has newer data from another device. Refresh this phone to show it?')){
-      updates.forEach(x=>originalSet.call(localStorage,x.document_key,x.value));location.reload();
-    }
-  }catch(e){console.warn('Cloud refresh needs retry',e)}
+async function pollCloud() {
+  if (!client || !currentUser || syncPaused || pending.size || syncInProgress
+      || Date.now() - lastPull < 15000) return;
+  lastPull = Date.now();
+  try {
+    const { data, error } = await client.from('wh_documents')
+      .select('document_key,value,updated_at').eq('user_id', currentUser.id);
+    if (error) throw error;
+    const rows = (data || []).filter(x => managed(x.document_key));
+    const cloudKeys = new Set(rows.map(x => x.document_key));
+    const changed = rows.some(x => localStorage.getItem(x.document_key) !== x.value)
+      || [...remoteBaseline.keys()].some(k => !cloudKeys.has(k) && localStorage.getItem(k) !== null);
+    if (changed) { await initialSync(); return; }
+    rows.forEach(x => remoteBaseline.set(x.document_key, {
+      value: x.value, updated_at: x.updated_at
+    }));
+    for (const key of [...remoteBaseline.keys()])
+      if (!cloudKeys.has(key)) remoteBaseline.delete(key);
+    rememberBaselines();
+  } catch (e) { console.warn('Cloud refresh needs retry', e); }
 }
 // The service worker is registered for installed web push; no page caching or graphics changes.
 if ('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('./sw.js').catch(console.warn);
