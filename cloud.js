@@ -114,9 +114,32 @@ function mergeCloudDocument(baseRaw, localRaw, remoteRaw) {
   return merged === WH_CONFLICT ? { ok: false }
     : { ok: true, value: merged === WH_ABSENT ? null : JSON.stringify(merged) };
 }
+const recoveryKey = 'daily-sweets-sync-recovery-v1';
+let recoverySavedThisSession = false;
+function snapshotBeforeCloudReplace() {
+  if (recoverySavedThisSession) return true;
+  try {
+    const old = JSON.parse(localStorage.getItem(recoveryKey) || 'null');
+    const previous = old?.owner === currentUser?.id && Array.isArray(old.backups)
+      ? old.backups : [];
+    originalSet.call(localStorage, recoveryKey, JSON.stringify({
+      owner: currentUser?.id,
+      backups: [{ savedAt: new Date().toISOString(), documents: localDocs() },
+        ...previous].slice(0, 3)
+    }));
+    recoverySavedThisSession = true;
+    return true;
+  } catch (e) {
+    console.warn('Cloud update blocked: local recovery backup could not be stored', e);
+    return false;
+  }
+}
 function applyCloudLocal(key, value) {
+  // Refuse to replace phone content if an independent recovery copy cannot be kept.
+  if (!snapshotBeforeCloudReplace()) return false;
   if (value === null) originalRemove.call(localStorage, key);
   else originalSet.call(localStorage, key, value);
+  return true;
 }
 function cloudConflictNotice() {
   setStatus('Sync Conflict — Review Needed');
@@ -226,7 +249,7 @@ async function flushPending() {
           if (!merged.ok) { blockedSync.add(key); continue; }
           if (localStorage.getItem(key) !== queued) continue;
           value = merged.value;
-          if (value !== queued) { applyCloudLocal(key, value); changedLocal = true; }
+          if (value !== queued) { if (!applyCloudLocal(key, value)) { blockedSync.add(key); continue; } changedLocal = true; }
           pending.set(key, value);
           setBaseline(key, remote || null);
           if ((remote?.value ?? null) === value) {
@@ -360,7 +383,7 @@ async function initialSync() {
       // Record the actual cloud ancestor BEFORE uploading a merged result.
       setBaseline(key, row);
       if (result.value !== local) {
-        applyCloudLocal(key, result.value); changedLocal = true;
+        if (!applyCloudLocal(key, result.value)) { blockedSync.add(key); hasConflict = true; continue; } changedLocal = true;
       }
       if (result.value !== remote) pending.set(key, result.value);
       else pending.delete(key);
