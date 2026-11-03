@@ -109,6 +109,12 @@ function mergeCloudDocument(baseRaw, localRaw, remoteRaw) {
   if (localRaw === remoteRaw) return { ok: true, value: localRaw };
   if (baseRaw !== undefined && localRaw === baseRaw) return { ok: true, value: remoteRaw };
   if (baseRaw !== undefined && remoteRaw === baseRaw) return { ok: true, value: localRaw };
+  // Without a known shared ancestor we cannot distinguish a deliberate deletion
+  // from an item that has not arrived on this device. The old array merge could
+  // resurrect removed chores/habits by unioning both copies. Keep both copies
+  // untouched until the household explicitly reconciles them.
+  if (baseRaw === undefined && localRaw != null && remoteRaw != null)
+    return { ok: false };
   const decode = raw => {
     if (raw == null) return WH_ABSENT;
     try { return JSON.parse(raw); } catch { return raw; }
@@ -505,11 +511,19 @@ async function pollCloud() {
       && localStorage.getItem(k) !== null
       && (!blockedSync.has(k) || blockedCloudVersion.get(k) !== null));
     if (changed) { await initialSync(); return; }
-    rows.forEach(x => remoteBaseline.set(x.document_key, {
-      value: x.value, updated_at: x.updated_at
-    }));
+    rows.forEach(x => {
+      // A cloud version is NOT a common sync ancestor while a local edit or
+      // conflict remains. Recording it as one can make old items reappear or
+      // allow the next edit to silently overwrite the other phone's data.
+      if (blockedSync.has(x.document_key) || pending.has(x.document_key)
+          || localStorage.getItem(x.document_key) !== x.value) return;
+      remoteBaseline.set(x.document_key, {
+        value: x.value, updated_at: x.updated_at
+      });
+    });
     for (const key of [...remoteBaseline.keys()])
-      if (!cloudKeys.has(key)) remoteBaseline.delete(key);
+      if (!cloudKeys.has(key) && !blockedSync.has(key) && !pending.has(key))
+        remoteBaseline.delete(key);
     rememberBaselines();
   } catch (e) { console.warn('Cloud refresh needs retry', e); }
 }
