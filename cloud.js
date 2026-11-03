@@ -19,6 +19,10 @@ const pending = new Map();
 const remoteBaseline = new Map();
 const journalKey = 'daily-sweets-unsent-v1';
 const blockedSync = new Set();
+// Remember the cloud version that already caused a conflict, so unchanged
+// conflicts do not get re-reviewed (or repeatedly trigger a warning) on polling.
+const blockedCloudVersion = new Map();
+let conflictNoticeDisplayed = false;
 const originalSet = Storage.prototype.setItem;
 const originalRemove = Storage.prototype.removeItem;
 const originalClear = Storage.prototype.clear;
@@ -143,8 +147,12 @@ function applyCloudLocal(key, value) {
 }
 function cloudConflictNotice() {
   setStatus('Sync Conflict — Review Needed');
-  if ($('settings-popup')?.hidden) dialog('Sync Review Needed',
-    'Both phones changed the same information. Nothing has been replaced. The copies on each phone and in the cloud are preserved. Save a backup before resolving this conflict.');
+  // Show the warning once per unresolved conflict session, not every 30 seconds.
+  if (!conflictNoticeDisplayed && $('settings-popup')?.hidden) {
+    conflictNoticeDisplayed = true;
+    dialog('Sync Review Needed',
+      'Both phones changed the same information. Nothing has been replaced. The copies on each phone and in the cloud are preserved. Save a backup before resolving this conflict.');
+  }
 }
 function saveJournal(){
   if(!currentUser)return;
@@ -204,20 +212,22 @@ function scheduleSync() {
 Storage.prototype.setItem = function(key, value) {
   originalSet.call(this, key, value);
   if (this === localStorage && managed(String(key)) && currentUser && !syncPaused) {
-    blockedSync.delete(String(key)); pending.set(String(key), String(value)); saveJournal(); scheduleSync();
+    blockedSync.delete(String(key)); blockedCloudVersion.delete(String(key)); conflictNoticeDisplayed = false;
+    pending.set(String(key), String(value)); saveJournal(); scheduleSync();
   }
 };
 Storage.prototype.removeItem = function(key) {
   originalRemove.call(this, key);
   if (this === localStorage && managed(String(key)) && currentUser && !syncPaused) {
     // Deletes are distinct from an empty stored value.
-    blockedSync.delete(String(key)); pending.set(String(key), null); saveJournal(); scheduleSync();
+    blockedSync.delete(String(key)); blockedCloudVersion.delete(String(key)); conflictNoticeDisplayed = false;
+    pending.set(String(key), null); saveJournal(); scheduleSync();
   }
 };
 Storage.prototype.clear = function() {
   const keys = this === localStorage ? localDocs().map(x => x.document_key) : [];
   originalClear.call(this);
-  if (currentUser && !syncPaused) { keys.forEach(k => { blockedSync.delete(k); pending.set(k, null); }); saveJournal(); scheduleSync(); }
+  if (currentUser && !syncPaused) { keys.forEach(k => { blockedSync.delete(k); blockedCloudVersion.delete(k); pending.set(k, null); }); saveJournal(); scheduleSync(); }
 };
 async function flushPending() {
   if (!currentUser || !client || syncInProgress || syncPaused || !navigator.onLine || !pending.size) return;
@@ -246,7 +256,7 @@ async function flushPending() {
         const base = remoteBaseline.get(key);
         if ((remote?.value ?? null) !== (base?.value ?? null) || (!!remote !== !!base)) {
           const merged = mergeCloudDocument(base?.value, value, remote?.value ?? null);
-          if (!merged.ok) { blockedSync.add(key); continue; }
+          if (!merged.ok) { blockedSync.add(key); blockedCloudVersion.set(key, remote?.updated_at ?? null); continue; }
           if (localStorage.getItem(key) !== queued) continue;
           value = merged.value;
           if (value !== queued) { if (!applyCloudLocal(key, value)) { blockedSync.add(key); continue; } changedLocal = true; }
@@ -281,7 +291,9 @@ async function flushPending() {
   } finally {
     syncInProgress = false;
     if (pending.size && !blockedSync.size) scheduleSync();
-    if (changedLocal && !pending.size && !blockedSync.size) location.reload();
+    // Refresh sections updated from the cloud even if a different section has an unresolved conflict.
+    // Unsent local edits are kept in the sync journal across reloads.
+    if (changedLocal) location.reload();
   }
 }
 function createAuthDialog() {
@@ -373,13 +385,15 @@ async function initialSync() {
       const baseline = remoteBaseline.get(key);
       if (local === remote) {
         setBaseline(key, row); pending.delete(key); blockedSync.delete(key);
+        blockedCloudVersion.delete(key);
         continue;
       }
       const result = mergeCloudDocument(baseline?.value, local, remote);
       if (!result.ok) {
-        blockedSync.add(key); hasConflict = true; continue;
+        blockedSync.add(key); blockedCloudVersion.set(key, row?.updated_at ?? null);
+        hasConflict = true; continue;
       }
-      blockedSync.delete(key);
+      blockedSync.delete(key); blockedCloudVersion.delete(key);
       // Record the actual cloud ancestor BEFORE uploading a merged result.
       setBaseline(key, row);
       if (result.value !== local) {
@@ -396,7 +410,9 @@ async function initialSync() {
   } finally { syncPaused = false; }
   await flushPending();
   if (hasConflict || blockedSync.size) cloudConflictNotice();
-  if (changedLocal && !pending.size && !blockedSync.size) location.reload();
+  // Refresh sections updated from the cloud even if a different section has an unresolved conflict.
+    // Unsent local edits are kept in the sync journal across reloads.
+    if (changedLocal) location.reload();
   if (notify?.checked && typeof Notification !== 'undefined'
       && Notification.permission === 'granted') await subscribePush(false);
 }
@@ -460,7 +476,7 @@ if(validConfig){
     const old=currentUser?.id;currentUser=session?.user || null;
     updateSignInButton();
     if(currentUser && old!==currentUser.id && (event==='SIGNED_IN'||event==='INITIAL_SESSION'))setTimeout(()=>void initialSync(),0);
-    if(event==='SIGNED_OUT'){currentUser=null;pending.clear();remoteBaseline.clear();blockedSync.clear();syncPaused=false;deviceReady=false;setStatus('Not Connected');}
+    if(event==='SIGNED_OUT'){currentUser=null;pending.clear();remoteBaseline.clear();blockedSync.clear();blockedCloudVersion.clear();conflictNoticeDisplayed=false;syncPaused=false;deviceReady=false;setStatus('Not Connected');}
   });
   window.addEventListener('online',()=>{void flushPending();void pollCloud()});
   window.addEventListener('pagehide',()=>void flushPending());
@@ -469,7 +485,9 @@ if(validConfig){
   })();
 }else{setStatus('Not Connected')}
 async function pollCloud() {
-  if (!client || !currentUser || syncPaused || pending.size || syncInProgress
+  // Do not freeze all incoming changes just because one document has unsent or blocked edits.
+  // initialSync merges each document independently and preserves unresolved local edits.
+  if (!client || !currentUser || syncPaused || syncInProgress
       || Date.now() - lastPull < 15000) return;
   lastPull = Date.now();
   try {
@@ -478,8 +496,14 @@ async function pollCloud() {
     if (error) throw error;
     const rows = (data || []).filter(x => managed(x.document_key));
     const cloudKeys = new Set(rows.map(x => x.document_key));
-    const changed = rows.some(x => localStorage.getItem(x.document_key) !== x.value)
-      || [...remoteBaseline.keys()].some(k => !cloudKeys.has(k) && localStorage.getItem(k) !== null);
+    const changed = rows.some(x => {
+      if (localStorage.getItem(x.document_key) === x.value) return false;
+      // Avoid repeatedly retrying an unchanged, known conflict; retry when the
+      // cloud row changes or a new local edit clears the blocked flag.
+      return !blockedSync.has(x.document_key) || blockedCloudVersion.get(x.document_key) !== x.updated_at;
+    }) || [...remoteBaseline.keys()].some(k => !cloudKeys.has(k)
+      && localStorage.getItem(k) !== null
+      && (!blockedSync.has(k) || blockedCloudVersion.get(k) !== null));
     if (changed) { await initialSync(); return; }
     rows.forEach(x => remoteBaseline.set(x.document_key, {
       value: x.value, updated_at: x.updated_at
