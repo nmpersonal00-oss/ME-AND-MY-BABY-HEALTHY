@@ -281,7 +281,9 @@ async function flushPending() {
   } finally {
     syncInProgress = false;
     if (pending.size && !blockedSync.size) scheduleSync();
-    if (changedLocal && !pending.size && !blockedSync.size) location.reload();
+    // Refresh sections updated from the cloud even if a different section has an unresolved conflict.
+    // Unsent local edits are kept in the sync journal across reloads.
+    if (changedLocal) location.reload();
   }
 }
 function createAuthDialog() {
@@ -396,7 +398,9 @@ async function initialSync() {
   } finally { syncPaused = false; }
   await flushPending();
   if (hasConflict || blockedSync.size) cloudConflictNotice();
-  if (changedLocal && !pending.size && !blockedSync.size) location.reload();
+  // Refresh sections updated from the cloud even if a different section has an unresolved conflict.
+    // Unsent local edits are kept in the sync journal across reloads.
+    if (changedLocal) location.reload();
   if (notify?.checked && typeof Notification !== 'undefined'
       && Notification.permission === 'granted') await subscribePush(false);
 }
@@ -469,7 +473,9 @@ if(validConfig){
   })();
 }else{setStatus('Not Connected')}
 async function pollCloud() {
-  if (!client || !currentUser || syncPaused || pending.size || syncInProgress
+  // Do not freeze all incoming changes just because one document has unsent or blocked edits.
+  // initialSync merges each document independently and preserves unresolved local edits.
+  if (!client || !currentUser || syncPaused || syncInProgress
       || Date.now() - lastPull < 15000) return;
   lastPull = Date.now();
   try {
@@ -478,8 +484,14 @@ async function pollCloud() {
     if (error) throw error;
     const rows = (data || []).filter(x => managed(x.document_key));
     const cloudKeys = new Set(rows.map(x => x.document_key));
-    const changed = rows.some(x => localStorage.getItem(x.document_key) !== x.value)
-      || [...remoteBaseline.keys()].some(k => !cloudKeys.has(k) && localStorage.getItem(k) !== null);
+    const changed = rows.some(x => {
+      if (localStorage.getItem(x.document_key) === x.value) return false;
+      // Avoid repeatedly retrying an unchanged, known conflict; retry when the
+      // cloud row changes or a new local edit clears the blocked flag.
+      const base = remoteBaseline.get(x.document_key);
+      return !blockedSync.has(x.document_key) || base?.updated_at !== x.updated_at || base?.value !== x.value;
+    }) || [...remoteBaseline.keys()].some(k => !cloudKeys.has(k)
+      && localStorage.getItem(k) !== null && !blockedSync.has(k));
     if (changed) { await initialSync(); return; }
     rows.forEach(x => remoteBaseline.set(x.document_key, {
       value: x.value, updated_at: x.updated_at
