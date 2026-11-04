@@ -1,34 +1,25 @@
 name: Inspect habit synchronization rendering (temporary)
 on:
   push:
-    paths:
-      - '.github/workflows/inspect-habits-temporary.yml'
+    paths: ['.github/workflows/inspect-habits-temporary.yml']
 jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print only habit-related code excerpts
+      - name: Inspect habit renderer and save/load logic
         run: |
           python - <<'PY'
-          import re
           from pathlib import Path
+          import re
           s=Path('index.html').read_text()
-          print('INDEX_BYTES',len(s),'LINES',s.count('\n')+1)
-          pats=[
-            r'function\s+renderHabits\b',r'renderHabits\s*=',r'function\s+renderHabit\b',
-            r'function\s+saveHabit\b',r'function\s+editHabit\b',r'function\s+drawHabits\b',
-            r'\bid=["\x27]habit-',r'class=["\x27][^"\x27]*habit-',
-            r'\bhabits-v4\b',r'\bhabit-time\b',r'\bhabit-form\b',r'\bhabit-list\b',
-            r'\bhabit-card\b',r'\bhabit-row\b',r'\bhabit-item\b',
-            r'const\s+habits\b',r'habits\.map\(',r'reminder time',r'habit\.time',
-          ]
-          for p in pats:
-            matches=list(re.finditer(p,s,re.I))
-            print('\nMATCH',p,'TOTAL',len(matches))
-            for m in matches[:7]:
-              clip=s[max(0,m.start()-230):min(len(s),m.end()+480)]
-              clip=re.sub(r'\s+',' ',clip)
-              clip=re.sub(r'[A-Za-z0-9+/=]{140,}', '[LONG INLINE ASSET]', clip)
-              print('offset',m.start(),'excerpt',clip[:750])
+          for a,b in [(14672900,14677000),(14676800,14680500),(14680500,14682400)]:
+            print('CODE RANGE',a,b)
+            print(s[a:b].replace('\\n','\n'))
+          for term in ['function load(', 'function save(', 'function restore(', 'function normalize', 'function isComplete(', 'habit-entry', 'habit-detail', 'habit-name']:
+            found=[m.start() for m in re.finditer(re.escape(term),s) if m.start()>14234000]
+            print('TERM',term,'offsets',found[:12])
+            for p in found[:2]:
+              if 14234000<p<14710000:
+                print(s[max(14234000,p-380):p+1300])
           PY
