@@ -105,6 +105,58 @@ function whMergeValue(base, local, remote, depth = 0) {
     return whMergeArray(base, local, remote, depth);
   return WH_CONFLICT;
 }
+
+function reconcileHabitReminderSchedule(localRaw, remoteRaw, baselineRaw) {
+  // Reconcile reminder fields only. Never change completion progress, habit
+  // names, counters, order, or locally pending cloud writes.
+  if (typeof localRaw !== 'string' || typeof remoteRaw !== 'string') return null;
+  let local, remote, base;
+  try {
+    local=JSON.parse(localRaw);
+    remote=JSON.parse(remoteRaw);
+    base=baselineRaw == null ? null : JSON.parse(baselineRaw);
+  } catch { return null; }
+  if (!Array.isArray(local?.habits) || !Array.isArray(remote?.habits)) return null;
+  const remoteById=new Map();
+  for (const h of remote.habits) {
+    if (!h || typeof h.id!=='string' || remoteById.has(h.id)) return null;
+    remoteById.set(h.id,h);
+  }
+  const baseById=new Map(Array.isArray(base?.habits)
+    ? base.habits.filter(h=>h && typeof h.id==='string').map(h=>[h.id,h]) : []);
+  let changed=false;
+  const habits=local.habits.map(h=>{
+    if (!h || typeof h.id!=='string') return h;
+    const shared=remoteById.get(h.id);
+    if (!shared || !Object.hasOwn(shared,'time')) return h;
+    if (shared.time!=='' && (typeof shared.time!=='string' ||
+        !/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(shared.time))) return h;
+    const old=baseById.get(h.id), next={...h};
+    if (!old) {
+      // Without a common ancestor only fill missing time, never overwrite
+      // an existing local clock time that might be an unsent user choice.
+      if (h.time || !shared.time) return h;
+      next.time=shared.time;
+      if (Object.hasOwn(shared,'remind')) next.remind=!!shared.remind;
+      if (shared.timeZone==='America/Los_Angeles' ||
+          shared.timeZone==='America/Winnipeg') next.timeZone=shared.timeZone;
+    } else {
+      for (const field of ['time','remind','timeZone']) {
+        if (!Object.hasOwn(shared,field)) continue;
+        if (JSON.stringify(h[field])!==JSON.stringify(old[field])) continue;
+        const value=shared[field];
+        if (field==='timeZone' && value!=='America/Winnipeg' &&
+            value!=='America/Los_Angeles') continue;
+        if (field==='remind' && typeof value!=='boolean') continue;
+        next[field]=value;
+      }
+    }
+    if (JSON.stringify(next)!==JSON.stringify(h)) {changed=true;return next}
+    return h;
+  });
+  return changed?JSON.stringify({...local,habits}):null;
+}
+
 function mergeCloudDocument(baseRaw, localRaw, remoteRaw) {
   if (localRaw === remoteRaw) return { ok: true, value: localRaw };
   if (baseRaw !== undefined && localRaw === baseRaw) return { ok: true, value: remoteRaw };
@@ -386,9 +438,22 @@ async function initialSync() {
       ...remoteBaseline.keys(), ...pending.keys()]);
     for (const key of keys) {
       const row = rows.get(key) || null;
-      const local = localStorage.getItem(key);
+      let local = localStorage.getItem(key);
       const remote = row?.value ?? null;
       const baseline = remoteBaseline.get(key);
+      // A phone with an older local habit document can miss reminder times
+      // during a general sync conflict. Restore schedule fields from the cloud
+      // only if this document has no pending edits on this phone.
+      if (key === 'wifey-hubby-habits-v4' && !pending.has(key) && local !== remote) {
+        const refreshed = reconcileHabitReminderSchedule(local, remote, baseline?.value);
+        if (refreshed !== null) {
+          if (!applyCloudLocal(key, refreshed)) {
+            blockedSync.add(key); hasConflict = true; continue;
+          }
+          local = refreshed;
+          changedLocal = true;
+        }
+      }
       if (local === remote) {
         setBaseline(key, row); pending.delete(key); blockedSync.delete(key);
         blockedCloudVersion.delete(key);
