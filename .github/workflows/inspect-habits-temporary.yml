@@ -1,0 +1,34 @@
+name: Inspect habit synchronization rendering (temporary)
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-habits-temporary.yml'
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print only habit-related code excerpts
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          s=Path('index.html').read_text()
+          print('INDEX_BYTES',len(s),'LINES',s.count('\n')+1)
+          pats=[
+            r'function\s+renderHabits\b',r'renderHabits\s*=',r'function\s+renderHabit\b',
+            r'function\s+saveHabit\b',r'function\s+editHabit\b',r'function\s+drawHabits\b',
+            r'\bid=["\x27]habit-',r'class=["\x27][^"\x27]*habit-',
+            r'\bhabits-v4\b',r'\bhabit-time\b',r'\bhabit-form\b',r'\bhabit-list\b',
+            r'\bhabit-card\b',r'\bhabit-row\b',r'\bhabit-item\b',
+            r'const\s+habits\b',r'habits\.map\(',r'reminder time',r'habit\.time',
+          ]
+          for p in pats:
+            matches=list(re.finditer(p,s,re.I))
+            print('\nMATCH',p,'TOTAL',len(matches))
+            for m in matches[:7]:
+              clip=s[max(0,m.start()-230):min(len(s),m.end()+480)]
+              clip=re.sub(r'\s+',' ',clip)
+              clip=re.sub(r'[A-Za-z0-9+/=]{140,}', '[LONG INLINE ASSET]', clip)
+              print('offset',m.start(),'excerpt',clip[:750])
+          PY
