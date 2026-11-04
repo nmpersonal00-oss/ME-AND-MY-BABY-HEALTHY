@@ -51,8 +51,14 @@ The app remains local-first until sign-in and the updated HTML is deployed. The 
 * iPhone lock screen and app-closed delivery are supported on iOS 16.4+ for an installed Home Screen PWA. Device fully powered off, offline, Focus restrictions, permission denial, push service outages, and TTL expiration prevent guaranteed instant delivery. Critical appointments should also have another reminder method until testing is complete.
 * Sound Effects control and existing 3 a.m. resets are left unchanged in this foundation. Further sync and reset tests are required for reliable behavior on both devices.
 * The server uses a simple at-most-once claim with retries for transient send errors. More sophisticated server observability and conflict handling should be added before relying on the application for critical appointments.
-* Push is scheduled using each subscribed phone's stored time zone. This works naturally if both phones share a time zone. Supporting calendar events with a fixed event time zone across travel will require storing the event time zone per event.
+* Push uses each **event or habit's stored reminder time zone** (California or Manitoba) as its single schedule, then sends to every subscribed phone at the same instant, regardless of device time zones. Older items without a time zone use California. The sender uses a short catch-up window and schedule-aware delivery keys, so changing a reminder time does not suppress the newly scheduled notification.
 
 ## Files
 
 `index.html` preserved visual app; `cloud.js` authentication, sync and push subscription; `cloud-config.js` public config only; `manifest.webmanifest` PWA identity; `sw.js` notification handler; `assets/icon-*` derived from your supplied tulip sticker; `supabase/migrations/…` dedicated database schema and row-level security; `supabase/functions/send-reminders` scheduled Web Push sender.
+
+## Notification reliability update (November 2026)
+
+The live `send-reminders` Edge Function (source: root `index.ts`) uses a single calendar/habit schedule per account and distributes each matching notification to all enabled push subscriptions. Calendar event and habit times are evaluated in the item's selected timezone. A 2-minute catch-up window tolerates delayed minute-cron invocations; keys include the scheduled time/zone so same-day edits do not silently suppress new times. Calendar repetition and habit completion settings remain unchanged. The special Manitoba UTC−5 rule remains in effect for the 2026 transition. The backend's authenticated `dryRun` request is strictly read-only and returns counts only, to help validate upcoming times without triggering notifications.
+
+Verified against saved household data in read-only mode: three upcoming habit schedules and one calendar event each matched **two active subscriptions** with zero server errors. This is a server-side scheduling verification, not an actual locked-phone delivery test. Keep the app installed and notification permissions enabled on both phones.
