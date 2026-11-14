@@ -29,6 +29,8 @@ export function summarize(study, rows, now = new Date()) {
   const completed = new Set(eligible.map(r => r.local_date)).size;
   const episodes = eligible.map(r => r.disagreement_episodes);
   const total = episodes.reduce((a, b) => a + b, 0);
+  const tensionEpisodes = eligible.map(r => r.tension_episodes);
+  const angerEpisodes = eligible.map(r => r.anger_episodes);
   return {
     expectedDays: days,
     recordedDays: completed,
@@ -41,12 +43,17 @@ export function summarize(study, rows, now = new Date()) {
     meanHappiness: mean(eligible.map(r => r.happiness)),
     totalEpisodes: total,
     meanEpisodesPerRecordedDay: mean(episodes),
-    daysWithEpisodes: episodes.filter(x => x > 0).length
+    daysWithEpisodes: episodes.filter(x => x > 0).length,
+    tensionEpisodeTotal: tensionEpisodes.reduce((a,b) => a + b, 0),
+    angerEpisodeTotal: angerEpisodes.reduce((a,b) => a + b, 0),
+    meanTensionEpisodes: mean(tensionEpisodes),
+    meanAngerEpisodes: mean(angerEpisodes)
   };
 }
 const CSV_COLUMNS = [
   'study_id','protocol_version','start_on','timezone','local_date','calm',
   'tension','anger','happiness','connectedness','disagreement_episodes',
+  'tension_episodes','anger_episodes',
   'outside_stress','communication_quality','sleep_hours','together_minutes',
   'notes','created_at','updated_at'
 ];
