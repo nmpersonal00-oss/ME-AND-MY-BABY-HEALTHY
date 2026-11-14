@@ -57,6 +57,8 @@ function dateForStudy(date = new Date()) { return calendarDate(date, study?.time
 function clearForm() {
   for (const id of ['calm','tension','anger','happiness','connectedness','outside_stress','communication_quality','sleep_hours','together_minutes','notes']) $(id).value = '';
   $('disagreement_episodes').value = '0';
+  $('tension_episodes').value = '0';
+  $('anger_episodes').value = '0';
   $('revisionNote').textContent = 'New entry (nothing saved yet)';
   $('deleteCheckin').hidden = true;
 }
@@ -64,7 +66,7 @@ function loadDateIntoForm() {
   clearForm();
   const data = rows.find(r => r.local_date === formData('localDate'));
   if (!data) return;
-  for (const key of ['calm','tension','anger','happiness','connectedness','disagreement_episodes',
+  for (const key of ['calm','tension','anger','happiness','connectedness','disagreement_episodes','tension_episodes','anger_episodes',
     'outside_stress','communication_quality','sleep_hours','together_minutes','notes']) {
     $(key).value = data[key] == null ? '' : String(data[key]);
   }
@@ -188,6 +190,8 @@ function checkinPayload() {
     anger: requiredNumber('anger'), happiness: requiredNumber('happiness'),
     connectedness: requiredNumber('connectedness'),
     disagreement_episodes: requiredNumber('disagreement_episodes'),
+    tension_episodes: requiredNumber('tension_episodes'),
+    anger_episodes: requiredNumber('anger_episodes'),
     outside_stress: numberOrNull('outside_stress'),
     communication_quality: numberOrNull('communication_quality'),
     sleep_hours: numberOrNull('sleep_hours'),
@@ -198,9 +202,10 @@ function checkinPayload() {
     if (payload[k] !== null && (!Number.isInteger(payload[k]) || payload[k] < 0 || payload[k] > 10))
       throw new Error(k + ' must be a whole number from 0–10.');
   }
-  if (!Number.isInteger(payload.disagreement_episodes) ||
-    payload.disagreement_episodes < 0 || payload.disagreement_episodes > 30)
-    throw new Error('Disagreement episodes must be a whole number between 0 and 30.');
+  for (const k of ['disagreement_episodes','tension_episodes','anger_episodes']) {
+    if (!Number.isInteger(payload[k]) || payload[k] < 0 || payload[k] > 30)
+      throw new Error(k + ' must be a whole number between 0 and 30.');
+  }
   if (payload.sleep_hours !== null && (payload.sleep_hours < 0 || payload.sleep_hours > 24))
     throw new Error('Sleep hours must be between 0 and 24.');
   if (payload.together_minutes !== null && (!Number.isInteger(payload.together_minutes) ||
@@ -218,6 +223,8 @@ function renderAnalysis() {
     ['Average tension', fmt(s.meanTension)],
     ['Average anger', fmt(s.meanAnger)],
     ['Total disagreements', String(s.totalEpisodes)],
+    ['Tension episodes', String(s.tensionEpisodeTotal)],
+    ['Anger episodes', String(s.angerEpisodeTotal)],
     ['Avg disagreements / recorded day', fmt(s.meanEpisodesPerRecordedDay, 2)],
     ['Average happiness', fmt(s.meanHappiness)],
     ['Coverage', s.coveragePct == null ? '—' : fmt(s.coveragePct, 0) + '%']
@@ -236,7 +243,7 @@ function renderAnalysis() {
   const tbody = $('entries'); tbody.replaceChildren();
   for (const r of [...rows].sort((a,b) => b.local_date.localeCompare(a.local_date))) {
     const tr = document.createElement('tr');
-    for (const field of ['local_date','calm','tension','anger','disagreement_episodes']) {
+    for (const field of ['local_date','calm','tension','anger','disagreement_episodes','tension_episodes','anger_episodes']) {
       const td = document.createElement('td'); td.textContent = String(r[field] ?? '—'); tr.append(td);
     }
     const btn = document.createElement('button'); btn.type = 'button';
@@ -250,7 +257,7 @@ function renderAnalysis() {
   }
   if (!rows.length) {
     const tr = document.createElement('tr'), td = document.createElement('td');
-    td.colSpan=6; td.textContent='No observations yet. Add your first daily check-in.';
+    td.colSpan=8; td.textContent='No observations yet. Add your first daily check-in.';
     tr.append(td); tbody.append(tr);
   }
   drawChart(rows);
