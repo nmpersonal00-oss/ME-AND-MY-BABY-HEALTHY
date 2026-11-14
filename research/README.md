@@ -1,6 +1,6 @@
 # Sakinah Study — Personal Observational Research Notebook
 
-A separate, private, two-participant research notebook located exclusively under \`/research/\`. It does **not** replace, import from, or alter the existing Wifey & Hubby app. It uses new \`rb_\`-prefixed tables in the existing Wifey & Hubby Supabase project. It deliberately keeps its own browser authentication storage key.
+A separate, private, two-participant research notebook located exclusively under `/research/`. It does **not** replace, import from, or alter the existing Wifey & Hubby app. It uses new `rb_`-prefixed tables in the existing Wifey & Hubby Supabase project. It deliberately keeps its own browser authentication storage key.
 
 ## Protocol (version 1.0.0, fixed)
 
@@ -55,25 +55,26 @@ Avoid confirmatory hypothesis tests, p-values, or correlation-driven causal conc
 
 ## Architecture and privacy
 
-- \`index.html\`: standalone mobile-responsive research interface (existing app untouched).
-- \`app.js\`: browser-side Supabase Auth + Data API integration, study management, forms, charts and CSV.
-- \`stats.mjs\`: pure descriptive-statistics module, without external dependencies.
-- \`schema.sql\`: initial Postgres schema, functions, triggers, RLS and constrained grants.
-- \`schema_v2.sql\`: episode frequencies and server-timestamp hardening; apply after \`schema.sql\`.
-- \`stats.test.mjs\`: Node test runner for analysis logic.
+- `index.html`: standalone mobile-responsive research interface (existing app untouched).
+- `app.js`: browser-side Supabase Auth + Data API integration, study management, forms, charts and CSV.
+- `stats.mjs`: pure descriptive-statistics module, without external dependencies.
+- `schema.sql`: initial Postgres schema, functions, triggers, RLS and constrained grants.
+- `schema_v2.sql`: episode frequencies and server-timestamp hardening; apply after `schema.sql`.
+- `schema_v3.sql`: rejects temporary anonymous accounts, preserving private access for permanent sign-ins; apply after `schema_v2.sql`.
+- `stats.test.mjs`: Node test runner for analysis logic.
 
-No private observations or invitations are stored in GitHub. The browser receives only the existing **public** Supabase configuration from \`../cloud-config.js\`; no service-role key is used. All seven new \`rb_\` tables have RLS enabled. Only authenticated members can view their study status; daily check-ins and revision histories are accessible to the author only. Do not store passwords, private diary entries or invitation codes in the repo.
+No private observations or invitations are stored in GitHub. The browser receives only the existing **public** Supabase configuration from `../cloud-config.js`; no service-role key is used. All seven new `rb_` tables have RLS enabled. Only authenticated members can view their study status; daily check-ins and revision histories are accessible to the author only. Do not store passwords, private diary entries or invitation codes in the repo.
 
 **Important limitations:** The two apps share the existing Supabase project and authentication backend, but not database tables, local-storage auth keys or UI code. Anyone with access to the Supabase project dashboard or privileged backup credentials may be able to administer the research data. Security depends on proper Supabase Auth configuration and account security. Research data stored in the service are not end-to-end encrypted.
 
 ## Deployment instructions
 
-**Current status:** Research code lives on a dedicated development branch until deliberately merged. Existing \`main\` app assets are unchanged.
+**Current status:** Research code lives on a dedicated development branch until deliberately merged. Existing `main` app assets are unchanged.
 
-1. Review the additions in the pull request. Only \`research/\` paths should be included.
-2. **Database:** Both migrations have already been applied to the \`Wifey & Hubby\` Supabase project. Do **not** re-run them there. For a new Supabase project, apply \`schema.sql\` and then \`schema_v2.sql\` once each.
+1. Review the additions in the pull request. Only `research/` paths should be included.
+2. **Database:** All three migrations have already been applied to the `Wifey & Hubby` Supabase project. Do **not** re-run them there. For a new Supabase project, apply `schema.sql`, then `schema_v2.sql`, then `schema_v3.sql` once each.
 3. In Supabase Authentication → URL Configuration, add the deployed HTTPS research page URL to the allowed **Redirect URLs** (without deleting any existing URLs). Verify email/password auth and email confirmation settings.
-4. When you choose to publish it, merge the PR if the main branch is the published GitHub Pages branch. Open \`<your website base URL>/research/\` directly. No existing \`index.html\` needs editing.
+4. When you choose to publish it, merge the PR if the main branch is the published GitHub Pages branch. Open `<your website base URL>/research/` directly. No existing `index.html` needs editing.
 5. On two separate browsers/devices, create/enter **different verified email accounts**, create one study, generate an invitation, privately send it to the second participant, and join after consent.
 6. Test the daily write, correction, CSV download and study stopping rule using a **separate test study**, because stopping is irreversible. Do not enter real observations as test records.
 7. Never send real notes in issue reports, screenshots, or GitHub commits.
