@@ -41,11 +41,11 @@ export function summarize(study, rows, now = new Date()) {
     meanTension: mean(eligible.map(r => r.tension)),
     meanAnger: mean(eligible.map(r => r.anger)),
     meanHappiness: mean(eligible.map(r => r.happiness)),
-    totalEpisodes: total,
+    totalEpisodes: eligible.length ? total : null,
     meanEpisodesPerRecordedDay: mean(episodes),
     daysWithEpisodes: episodes.filter(x => x > 0).length,
-    tensionEpisodeTotal: tensionEpisodes.reduce((a,b) => a + b, 0),
-    angerEpisodeTotal: angerEpisodes.reduce((a,b) => a + b, 0),
+    tensionEpisodeTotal: eligible.length ? tensionEpisodes.reduce((a,b) => a + b, 0) : null,
+    angerEpisodeTotal: eligible.length ? angerEpisodes.reduce((a,b) => a + b, 0) : null,
     meanTensionEpisodes: mean(tensionEpisodes),
     meanAngerEpisodes: mean(angerEpisodes)
   };
