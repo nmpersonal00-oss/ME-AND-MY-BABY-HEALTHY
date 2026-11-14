@@ -222,9 +222,9 @@ function renderAnalysis() {
     ['Average calm', fmt(s.meanCalm)],
     ['Average tension', fmt(s.meanTension)],
     ['Average anger', fmt(s.meanAnger)],
-    ['Total disagreements', String(s.totalEpisodes)],
-    ['Tension episodes', String(s.tensionEpisodeTotal)],
-    ['Anger episodes', String(s.angerEpisodeTotal)],
+    ['Total disagreements', s.totalEpisodes == null ? '—' : String(s.totalEpisodes)],
+    ['Tension episodes', s.tensionEpisodeTotal == null ? '—' : String(s.tensionEpisodeTotal)],
+    ['Anger episodes', s.angerEpisodeTotal == null ? '—' : String(s.angerEpisodeTotal)],
     ['Avg disagreements / recorded day', fmt(s.meanEpisodesPerRecordedDay, 2)],
     ['Average happiness', fmt(s.meanHappiness)],
     ['Coverage', s.coveragePct == null ? '—' : fmt(s.coveragePct, 0) + '%']
@@ -291,10 +291,13 @@ function drawChart(records) {
   const x=(r)=>left+(last===start?0.5:(d(r)-start)/(last-start))*(xMax-left);
   const y=(v)=>yMax-(v/10)*(yMax-top);
   for (const [field,color] of [['calm','#24856b'],['tension','#d7a04a'],['anger','#b75d5d']]) {
-    if (sorted.length>1) {
-      el('polyline',{
-        points:sorted.map(r=>x(r).toFixed(1)+','+y(r[field]).toFixed(1)).join(' '),
-        fill:'none',stroke:color,'stroke-width':2.5,'stroke-linecap':'round','stroke-linejoin':'round'
+    for (let i = 1; i < sorted.length; i++) {
+      // Deliberately break the trend line over unobserved dates.
+      if (d(sorted[i]) - d(sorted[i-1]) !== 86400000) continue;
+      el('line',{
+        x1:x(sorted[i-1]), y1:y(sorted[i-1][field]),
+        x2:x(sorted[i]), y2:y(sorted[i][field]),
+        stroke:color,'stroke-width':2.5,'stroke-linecap':'round'
       });
     }
     sorted.forEach(r=>el('circle',{cx:x(r),cy:y(r[field]),r:3.8,fill:color}));
