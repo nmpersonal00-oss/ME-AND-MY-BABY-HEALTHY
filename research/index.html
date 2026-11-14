@@ -117,7 +117,7 @@
 
       <section class="panel">
         <div class="flex between"><div><div class="kicker">Daily observation</div><h2>Your private check-in</h2></div><span class="pill">0–10 self-report scales</span></div>
-        <p class="muted">Only you can read your emotions and private notes. Zero episodes is a valid answer; an unfilled day is <strong>missing</strong>, not zero. A check-in is allowed only while the study is active.</p>
+        <p class="muted">Only you can read your emotions and private notes. Zero episodes is a valid answer; an unfilled day is <strong>missing</strong>, not zero. Record each distinct tension or anger episode separately (a sustained period of at least five minutes, separated from another episode by at least fifteen calmer minutes). A check-in is allowed only while the study is active.</p>
         <form id="checkinForm">
           <div class="form-grid">
             <div class="field"><label for="localDate">Reporting date</label><input type="date" id="localDate" required></div>
@@ -127,6 +127,8 @@
             <div class="field"><label for="happiness">Happiness · 0 none, 10 very happy</label><select id="happiness" required></select></div>
             <div class="field"><label for="connectedness">Closeness · 0 none, 10 very close</label><select id="connectedness" required></select></div>
             <div class="field"><label for="disagreement_episodes">Tense disagreements today · 0–30</label><input id="disagreement_episodes" type="number" min="0" max="30" value="0" required></div>
+            <div class="field"><label for="tension_episodes">Tension episodes today · 0–30</label><input id="tension_episodes" type="number" min="0" max="30" value="0" required></div>
+            <div class="field"><label for="anger_episodes">Anger episodes today · 0–30</label><input id="anger_episodes" type="number" min="0" max="30" value="0" required></div>
             <div class="field"><label for="outside_stress">Outside stress · optional, 0–10</label><select id="outside_stress"></select></div>
             <div class="field"><label for="communication_quality">Communication quality · optional, 0–10</label><select id="communication_quality"></select></div>
             <div class="field"><label for="sleep_hours">Sleep last night · optional, hours</label><input id="sleep_hours" type="number" min="0" max="24" step=".5" placeholder="e.g. 7.5"></div>
@@ -144,7 +146,7 @@
         <div class="chart-shell"><svg class="chart" id="trendChart" viewBox="0 0 700 250" role="img" aria-label="Chart of your daily calm, tension and anger ratings"></svg></div>
         <div class="chart-key"><span><i class="key-dot" style="background:#24856b"></i>Calm</span><span><i class="key-dot" style="background:#d7a04a"></i>Tension</span><span><i class="key-dot" style="background:#b75d5d"></i>Anger</span></div>
         <h3 style="margin-top:24px">Recorded days</h3>
-        <div class="table-scroll"><table><thead><tr><th>Date</th><th>Calm</th><th>Tension</th><th>Anger</th><th>Disagreements</th></tr></thead><tbody id="entries"></tbody></table></div>
+        <div class="table-scroll"><table><thead><tr><th>Date</th><th>Calm</th><th>Tension</th><th>Anger</th><th>Disagreements</th><th>Tension episodes</th><th>Anger episodes</th><th>Open</th></tr></thead><tbody id="entries"></tbody></table></div>
         <p class="muted" style="margin-top:14px">This is one small self-observation. Daily trends are descriptive and cannot tell whether the boundaries caused any change. No baseline comparison is invented.</p>
       </section>
 
